@@ -93,6 +93,22 @@ class HonestAdditionsTest(unittest.TestCase):
         text = "Both plans have the added sessions."
         self.assertEqual(fmt.honest_additions(text, trace), text)
 
+    def test_replanned_day_uses_latest_plan(self):
+        """Codex round 2: Wednesday planned twice, the second plan adds a session."""
+        trace = [plan_call([KEY02, AI407]), plan_call([KEY02, AI407, GEN101])]
+        text = "I added a session on Wednesday."
+        self.assertEqual(fmt.honest_additions(text, trace), text)
+        self.assertEqual(fmt.honest_additions(text, list(reversed(trace))),
+                         "No additional session fits around your reservations on Wednesday.")
+
+    def test_suggestions_and_questions_are_not_claims(self):
+        """Codex round 2: offers to search are next steps, not claims."""
+        trace = [plan_call([KEY02, AI407])]
+        for text in ("Next, search for additional sessions on Thursday.",
+                     "Would you like me to look for extra sessions?",
+                     "You could add a session on Thursday instead."):
+            self.assertEqual(fmt.honest_additions(text, trace), text)
+
     def test_no_plan_no_change(self):
         text = "I added two sessions."
         self.assertEqual(fmt.honest_additions(text, []), text)
@@ -119,6 +135,12 @@ class DroppedTest(unittest.TestCase):
         self.assertEqual(fmt.collapse_dropped(text, trace),
                          "Keep SYN-GEN101 instead of 4 dropped (3 shown: SYN-DRP100, SYN-DRP101, SYN-DRP102) "
                          "because they overlap.")
+
+    def test_chosen_code_ends_a_run(self):
+        """Codex round 2: two short runs separated by planned sessions are not one long list."""
+        trace = [plan_call([GEN101, AI407], DROPPED[:4], locked=())]
+        text = "Choose SYN-GEN101 over SYN-DRP100 or SYN-DRP101, and SYN-AI407 over SYN-DRP102 or SYN-DRP103."
+        self.assertEqual(fmt.collapse_dropped(text, trace), text)
 
     def test_three_or_fewer_untouched(self):
         trace = [plan_call([GEN101], DROPPED[:3], locked=())]
@@ -149,6 +171,16 @@ class CapTest(unittest.TestCase):
         prose = " ".join(f"Filler sentence number {i} explains a detail at length." for i in range(30))
         out = fmt.cap_words(f"Yes, it works.\n{long_line}\n{prose}", [plan_call([GEN101], locked=())])
         self.assertIn(long_line, out)
+        self.assertLessEqual(fmt.count_words(out), fmt.MAX_WORDS)
+
+    def test_transit_lines_without_clock_are_protected(self):
+        """Codex round 2: transition lines in minutes survive the cap."""
+        transit = ["Venetian to Wynn, 6 min walk, tight", "Wynn to Caesars Forum, 18 minutes by shuttle, fine",
+                   "Back to Park MGM, about 32 min by shuttle and walk"]
+        prose = " ".join(f"Filler sentence number {i} explains a detail at length." for i in range(30))
+        out = fmt.cap_words("Yes, it works.\n" + "\n".join(transit) + "\n" + prose + " Next, reserve.")
+        for line in transit:
+            self.assertIn(line, out)
         self.assertLessEqual(fmt.count_words(out), fmt.MAX_WORDS)
 
     def test_long_first_sentence_is_shortened_last(self):

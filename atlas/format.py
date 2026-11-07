@@ -189,9 +189,16 @@ _DAY_NAME = re.compile(r"\b(mon|tue|wed|thu|fri)(?:day|nesday|sday|rsday)?\b|(�
 _ZH_DAY = {d: i for i, d in enumerate(_WEEKDAY_ZH)}
 
 
+_SUGGESTION = re.compile(
+    r"[?？]\s*$"  # a question offers, it does not claim
+    r"|^(?:(?:next|then|tip|also|or)\s*[,:]\s*)?(?:(?:you|we|i)\s+(?:can|could|may|might|should)\b|would you|"
+    r"do you want|want me|shall i|let me|search|look|find|consider|try|ask|check|browse|reserve|explore|add)\b"
+    r"|^(?:下一步[:：]?\s*)?(?:可以|建議|要不要|試試|搜尋|找找)", re.I)
+
+
 def _claims_addition(piece: str, codes: re.Pattern | None) -> bool:
     """A sentence that says sessions were added (not negated, and about sessions, not e.g. a profile)."""
-    if _NO_ADDITION_MARK.search(piece):
+    if _NO_ADDITION_MARK.search(piece) or _SUGGESTION.search(piece.strip()):
         return False
     about_session = bool(codes and codes.search(piece))
     if _CLAIM.search(piece) and not _NEGATION.search(piece):
@@ -215,7 +222,11 @@ def honest_additions(text: str, trace: list) -> str:
     names; a claim that names a session the planner really added is kept.
     """
     facts = [_plan_facts(r, a) for r, a in _plans(trace)]
-    empty = [f for f in facts if f["adds_nothing"]]
+    latest = {}
+    for f in facts:  # a day planned again counts with its latest plan only
+        latest.pop(f["day"], None)
+        latest[f["day"]] = f
+    empty = [f for f in latest.values() if f["adds_nothing"]]
     if not text or not empty:
         return text
     added = _code_pattern({k for f in facts for k in f["added"]})
@@ -223,7 +234,7 @@ def honest_additions(text: str, trace: list) -> str:
                              | {k for r, _ in _plans(trace) for d in r["plan"].get("dropped") or []
                                 if isinstance(d, dict) for k in _keys(d)})
     empty_days = {f["day"]: f for f in empty}
-    every_plan_empty = len(empty) == len(facts)
+    every_plan_empty = len(empty) == len(latest)
     already: set = set()  # days the model already stated plainly: only drop the claims there
     for line in text.split("\n"):
         for piece in _pieces(line):
@@ -271,11 +282,10 @@ def dropped_summary(n: int, shown: list[str], cjk: bool = False) -> str:
 _LIST_HEADER = re.compile(r"(?i)(?:\b(?:the planner |i )?dropped(?: sessions)?|未排入(?:的場次)?)\s*[:：]?\s*$")
 
 
-def _collapse_fragment(piece: str, pattern: re.Pattern, summary: str) -> str:
-    """Replace only the stretch from the first to the last dropped code with the summary; the rest of
-    the sentence (what to keep instead, the reason) stays. A "Dropped:" lead-in merges into the summary."""
-    matches = list(pattern.finditer(piece))
-    head, tail = piece[:matches[0].start()], piece[matches[-1].end():]
+def _collapse_span(piece: str, start: int, end: int, summary: str) -> str:
+    """Replace piece[start:end] (a run of dropped codes) with the summary; the rest of the sentence
+    (what to keep instead, the reason) stays. A "Dropped:" lead-in merges into the summary."""
+    head, tail = piece[:start], piece[end:]
     head = _LIST_HEADER.sub("", head)
     core = summary[:-1]  # without the final period
     if not tail.strip():
@@ -324,14 +334,26 @@ def collapse_dropped(text: str, trace: list) -> str:
         first = any_pattern.search(line)
         return bool(first and first.group(0).upper() in label)
 
+    def runs(piece: str) -> list[list[re.Match]]:
+        # contiguous dropped codes; a planned (chosen) code between them ends the run
+        out, cur = [], []
+        for m in any_pattern.finditer(piece):
+            if m.group(0).upper() in label:
+                cur.append(m)
+            else:
+                out, cur = out + [cur] if cur else out, []
+        return out + [cur] if cur else out
+
     # sentences inside a line
     lines = []
     for line in text.split("\n"):
         pieces = []
         for piece in _pieces(line):
-            codes = mentioned(piece)
-            if len(codes) > SHOWN_DROPPED and len(codes) > n_chosen(piece):
-                piece = _collapse_fragment(piece, pattern, dropped_summary(n, codes, _is_cjk(piece)))
+            for run in reversed(runs(piece)):
+                codes = list(dict.fromkeys(label[m.group(0).upper()] for m in run))
+                if len(codes) > SHOWN_DROPPED:
+                    piece = _collapse_span(piece, run[0].start(), run[-1].end(),
+                                           dropped_summary(n, codes, _is_cjk(piece)))
             pieces.append(piece)
         lines.append("".join(pieces))
 
@@ -356,16 +378,17 @@ def collapse_dropped(text: str, trace: list) -> str:
 # ---- 4. Length -------------------------------------------------------------------------------------
 
 FIRST_SENTENCE_MAX_WORDS = 40
+_MINUTES = re.compile(r"\b\d+(?:\.\d+)?\s*(?:min|mins|minutes)\b|\d+\s*分鐘", re.I)
 
 
 def _is_plan_line(line: str, codes: re.Pattern | None) -> bool:
-    """A line naming a session the tools planned or checked, or a short line with a clock time
-    (leave the hotel, a transition, back to the hotel)."""
+    """A line naming a session the tools planned or checked, or a short line with a clock time or a
+    travel time in minutes (leave the hotel, a transition, back to the hotel)."""
     if not line.strip():
         return False
     if codes and codes.search(line):
         return True
-    return bool(_CLOCK.search(line)) and count_words(line) <= PLAN_LINE_MAX_WORDS
+    return bool(_CLOCK.search(line) or _MINUTES.search(line)) and count_words(line) <= PLAN_LINE_MAX_WORDS
 
 
 def _shorten(piece: str, words: int) -> str:
@@ -379,7 +402,7 @@ def cap_words(text: str, trace: list | None = None, limit: int = MAX_WORDS) -> s
     """Trim prose sentences until the answer has at most `limit` words.
 
     Plan lines (lines naming a session the tools planned or checked, and short lines with a clock
-    time), the first sentence (the direct answer) and the "no additional session" sentence are kept.
+    time or travel minutes), the first sentence (the direct answer) and the "no additional session" sentence are kept.
     Prose is trimmed from the end, keeping the closing next step for as long as possible; then a first
     sentence longer than 40 words is shortened. Plan lines are never cut, so a plan whose own lines
     exceed the limit (eight sessions with all their transitions) stays over it.
