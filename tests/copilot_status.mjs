@@ -24,8 +24,12 @@ async function page(initial, { scheduleFails = false } = {}) {
     addEventListener(type, fn) { this.listeners[type] = fn; }
     focus() {}
   }
+  // The Event Atlas page provides the header toggle and the My re:Invent briefing slot.
+  const slots = { "copilot-toggle": new Elem("button"), "mine-briefing": Object.assign(new Elem("div"), { hidden: true }) };
+  const body = new Elem("body"); const bodyClasses = new Set();
+  body.classList = { toggle: (c, on) => (on ? bodyClasses.add(c) : bodyClasses.delete(c)) };
   runInNewContext(source, {
-    document: { body: new Elem("body"), createElement: tag => new Elem(tag),
+    document: { body, createElement: tag => new Elem(tag), getElementById: id => slots[id] || null,
       createTextNode: text => Object.assign(new Elem("#text"), { textContent: text }), querySelector: () => null },
     window: { dispatchEvent() {} }, Event, Date,
     location: { assign: url => { assigned = url; } },
@@ -42,22 +46,34 @@ async function page(initial, { scheduleFails = false } = {}) {
     },
   });
   await new Promise(resolve => setImmediate(resolve));
-  return { banner: created.find(e => e.id === "nc-banner"), calls, timers,
+  return { banner: created.find(e => e.id === "nc-banner"), calls, timers, page: slots, bodyClasses,
+    panel: created.find(e => e.id === "nc-panel"), demo: created.find(e => e.className === "nc-note nc-demo"),
     open: async () => {
-      created.find(e => e.id === "nc-fab").listeners.click();
+      slots["copilot-toggle"].listeners.click();
       await new Promise(resolve => setImmediate(resolve));
     },
     assigned: () => assigned, setStatus: value => { status = value; } };
 }
 
 const warning = await page(threeMinutes);
+assert.equal(warning.calls.filter(c => c.url === "/api/briefing").length, 1,
+  "Signed in, the briefing is requested once on page load, without opening the panel");
+assert.equal(warning.page["mine-briefing"].hidden, false);
+assert.match(warning.page["mine-briefing"].textContent, /Offline welcome briefing/);
+assert.equal(warning.demo.hidden, true);
+assert.equal(warning.page["copilot-toggle"].hidden, false);
+assert.equal(warning.panel.hidden, true);
 assert.match(warning.banner.textContent, /signed in · 3 min left · sign in again soon/);
 assert.equal(warning.banner.className, "nc-warn");
 await warning.open();
+assert.equal(warning.panel.hidden, false, "The header toggle opens the docked panel");
+assert.ok(warning.bodyClasses.has("nc-docked"));
 assert.equal(warning.calls.filter(c => c.url === "/api/briefing").length, 1,
-  "Opening Copilot with three minutes left must still request the welcome briefing");
+  "Opening Copilot with three minutes left must not request a second briefing");
 assert.equal(warning.banner.className, "nc-warn");
 await warning.open();
+assert.equal(warning.panel.hidden, true, "The same toggle closes it");
+assert.ok(!warning.bodyClasses.has("nc-docked"));
 assert.equal(warning.calls.filter(c => c.url === "/api/briefing").length, 1);
 const button = warning.banner.children.find(e => e.tag === "button");
 assert.ok(button);
@@ -92,11 +108,16 @@ await healthy.timers[0].fn();
 assert.match(healthy.banner.textContent, /app restarted, please sign in again/);
 assert.doesNotMatch(healthy.banner.textContent, /demo/);
 const restarted = await page({ signed_in: false, reason: "restarted", seconds_left: null });
+assert.equal(restarted.banner.children.filter(e => e.tag === "button").length, 0,
+  "Signed out, Event Atlas's sign-in button is the only sign-in control");
+assert.equal(restarted.demo.hidden, false, "Signed out, the panel says Copilot answers from demo data");
+assert.equal(restarted.page["mine-briefing"].hidden, true);
 await restarted.open();
 assert.deepEqual(restarted.calls.map(c => c.url), ["/api/status"]);
 const expired = await page({ signed_in: false, reason: "sign_in_required", seconds_left: null });
 assert.match(expired.banner.textContent, /please sign in again/);
 assert.doesNotMatch(expired.banner.textContent, /restarted/);
+assert.equal(expired.banner.children.filter(e => e.tag === "button").length, 0);
 await expired.open();
 assert.equal(expired.calls.filter(c => c.url === "/api/briefing").length, 0);
 const failed = await page(threeMinutes, { scheduleFails: true });

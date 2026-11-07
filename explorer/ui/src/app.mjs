@@ -20,6 +20,7 @@ import {
 } from "./discovery.mjs";
 import { createScene, VENUES } from "./scene.mjs";
 import { createPlanStore, watchPlan } from "./plan-store.mjs";
+import { chooseTab, homeDay, dayAgenda, dayCounts } from "./my-day.mjs";
 import {
   createOfficialConnection,
   connectionCopy,
@@ -59,8 +60,11 @@ const button = (label, action, cls = "") => {
 // The plan lives on the server (/api/plan); filters live in the URL hash only.
 const planStore = createPlanStore();
 const SIGN_IN_RETURN_KEY = "event-atlas.sign-in-return.v1";
+// Coming back from sign-in always opens My re:Invent, whatever tab started the sign-in.
+const returnedFromSignIn =
+  new URLSearchParams(location.search).get("signin") === "complete";
 // This stores only the current calendar view, never an authorization URL or token.
-if (new URLSearchParams(location.search).get("signin") === "complete") {
+if (returnedFromSignIn) {
   let savedHash = "";
   try {
     savedHash = sessionStorage.getItem(SIGN_IN_RETURN_KEY) || "";
@@ -77,6 +81,8 @@ const state = {
   ...normaliseCalendarFilters({}),
   view: "week",
   layout: "stack",
+  // "mine" (My re:Invent) or "explore"; null until the sign-in state is known.
+  tab: null,
   day: DAYS[0],
   panel: "none",
   selection: null,
@@ -93,6 +99,9 @@ let records = [],
   readerVersion = 0,
   weekScroll = null,
   dayScroll = null;
+let requestedTab = null,
+  dayFromURL = false,
+  userChoseTab = false;
 let planUnavailable = true,
   planError = "";
 const notify = (message) => {
@@ -103,6 +112,9 @@ try {
   const p = new URLSearchParams(location.hash.slice(1));
   for (const k of ["view", "day", "layout", "selection"])
     if (p.has(k)) state[k] = p.get(k);
+  // A reload of My re:Invent keeps its day; a fresh open or a sign-in return starts on the home day.
+  dayFromURL = p.has("day") && p.has("tab") && !returnedFromSignIn;
+  if (p.has("tab") && !returnedFromSignIn) requestedTab = p.get("tab");
   if (p.has("filters")) {
     const restored = {
       query: p.get("query") || "",
@@ -118,7 +130,7 @@ try {
     state.layout = "stack";
 } catch {}
 if (state.selection) state.panel = "abstract";
-else if (state.view === "day") state.panel = "map";
+else if (state.view === "day" && requestedTab === "explore") state.panel = "map";
 function writeURL() {
   const p = new URLSearchParams({
     view: state.view,
@@ -126,6 +138,7 @@ function writeURL() {
     layout: state.layout,
     filters: "1",
   });
+  if (state.tab) p.set("tab", state.tab);
   for (const k of ["query", "from", "to", "selection"])
     if (state[k]) p.set(k, state[k]);
   for (const k of FILTER_DIMENSIONS)
@@ -411,9 +424,124 @@ function renderCalendar(capture = true) {
   if (sel && !result.some((r) => r.key === sel.key))
     $("selection-status").textContent += " · 已選議程在目前條件外";
   renderPlanMissing();
+  renderMine();
   writeURL();
 }
+const SOURCE_TEXT = {
+  reserved: "✓ 已預約",
+  favorite: "★ 官方收藏",
+  local: "● 本機挑選",
+};
+function mineItem(p) {
+  const r = byKey.get(p.key);
+  const li = el("li");
+  const b = el(
+    "button",
+    `mine-item plan-${p.source}${r && r.key === state.selection ? " is-selected" : ""}`,
+  );
+  b.type = "button";
+  b.style.setProperty("--venue-color", r?.venue?.color || "#667580");
+  b.append(
+    el("span", "mine-time", `${localClock(p.start)}–${localClock(p.end)}`),
+    el("span", "mine-source", SOURCE_TEXT[p.source] || SOURCE_TEXT.local),
+  );
+  const main = el("span", "mine-main");
+  main.append(
+    el("strong", "", `${p.code} · ${p.title}`),
+    el(
+      "span",
+      "",
+      [r?.venue?.name || r?.session.venue, p.location].filter(Boolean).join(" · ") ||
+        "地點尚未公布",
+    ),
+  );
+  b.append(main);
+  b.setAttribute("aria-label", `${planLabel(p)}：${p.code} ${p.title}，${localClock(p.start)}–${localClock(p.end)}`);
+  if (r) b.addEventListener("click", () => select(r.key));
+  else b.disabled = true;
+  li.append(b);
+  return li;
+}
+function renderMine() {
+  if (state.tab !== "mine") return;
+  const counts = dayCounts(state.plan);
+  for (const b of $("mine-dates").children) {
+    b.textContent = `${dayLabel(b.dataset.day)}${counts[b.dataset.day] ? ` · ${counts[b.dataset.day]}` : ""}`;
+    b.setAttribute("aria-pressed", String(state.day === b.dataset.day));
+  }
+  const list = $("mine-agenda");
+  if (planUnavailable) {
+    $("mine-summary").textContent = planError || "正在讀取你的行程…";
+    list.replaceChildren();
+    return;
+  }
+  const rows = dayAgenda(state.plan, state.day);
+  const sessions = rows.flatMap((row) => (row.kind === "gap" ? row.items : [row.item]));
+  const n = (source) => sessions.filter((p) => p.source === source).length;
+  const gaps = rows.filter((row) => row.kind === "gap").length;
+  $("mine-summary").textContent = sessions.length
+    ? [
+        `${n("reserved")} 場已預約`,
+        n("favorite") ? `${n("favorite")} 場官方收藏` : "",
+        n("local") ? `${n("local")} 場本機挑選` : "",
+        gaps ? `${gaps} 段空檔` : "",
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : "";
+  list.replaceChildren(
+    ...rows.map((row) => {
+      if (row.kind === "session") return mineItem(row.item);
+      const li = el("li", "mine-gap");
+      li.style.minHeight = `${Math.min(180, Math.max(44, row.minutes * 0.6))}px`;
+      li.append(
+        el("b", "", row.label),
+        el("span", "", `${localClock(row.start)}–${localClock(row.end)} · 已預約場次之間的空檔`),
+      );
+      if (row.items.length) {
+        const inner = el("ol", "mine-agenda");
+        inner.append(...row.items.map(mineItem));
+        li.append(inner);
+      }
+      return li;
+    }),
+  );
+  if (!rows.length) {
+    const li = el("li", "mine-empty");
+    li.append(
+      el("p", "", "這一天還沒有已預約、收藏或本機挑選的議程。"),
+      button("到 Explore 找這天的議程", () => {
+        setTab("explore", true);
+        changeView("day", state.day);
+      }),
+    );
+    list.replaceChildren(li);
+  }
+}
+function setTab(tab, byUser = false) {
+  if (byUser) userChoseTab = true;
+  if (state.tab === tab) return;
+  captureScroll();
+  state.tab = tab;
+  if (tab === "mine" && state.panel === "map" && !state.selection) state.panel = "none";
+  layout();
+  renderCalendar(false);
+}
 function layout() {
+  const tab = state.tab;
+  $("workspace").dataset.tab = tab || "pending";
+  $("mine").hidden = tab === "explore";
+  $("calendar-pane").hidden = tab !== "explore";
+  $("explore-controls").hidden = tab !== "explore";
+  $("context-row").hidden = tab !== "explore";
+  for (const [id, name] of [
+    ["tab-mine", "mine"],
+    ["tab-explore", "explore"],
+  ]) {
+    $(id).setAttribute("aria-selected", String(tab === name));
+    $(id).setAttribute("aria-pressed", String(tab === name));
+    $(id).tabIndex = tab === name ? 0 : -1;
+  }
   $("workspace").dataset.view = state.view;
   $("workspace").dataset.layout = state.layout;
   $("calendar").hidden = state.layout === "stack";
@@ -476,7 +604,8 @@ function changeView(view, day = state.day) {
     view === "week" ? "fiveDays" : "timeGridDay",
     view === "week" ? DAYS[0] : day,
   );
-  if (view === "day" && state.panel === "none") state.panel = "map";
+  if (view === "day" && state.panel === "none" && state.tab === "explore")
+    state.panel = "map";
   layout();
   if (state.panel === "map") ensureScene();
   renderCalendar(false);
@@ -671,9 +800,11 @@ function refreshPlanButton() {
   }
 }
 // Re-reads /api/plan on Copilot's update event and when the tab is shown again (see watchPlan).
+let officialPlanStatus = null;
 const refreshPlan = watchPlan({
   store: planStore,
   onPlan(loaded, official) {
+    officialPlanStatus = official?.status || null;
     const items = canonicalPlan(loaded);
     const changed =
       planUnavailable || JSON.stringify(items) !== JSON.stringify(state.plan);
@@ -756,7 +887,23 @@ for (const day of DAYS) {
   const b = button(dayLabel(day), () => changeView("day", day));
   b.dataset.day = day;
   $("dates").append(b);
+  const m = button(dayLabel(day), () => {
+    state.day = day;
+    renderCalendar(false);
+  });
+  m.dataset.day = day;
+  $("mine-dates").append(m);
 }
+$("tab-mine").onclick = () => setTab("mine", true);
+$("tab-explore").onclick = () => setTab("explore", true);
+for (const tab of [$("tab-mine"), $("tab-explore")])
+  tab.addEventListener("keydown", (event) => {
+    if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+    event.preventDefault();
+    const next = state.tab === "mine" ? "explore" : "mine";
+    setTab(next, true);
+    $("tab-" + next).focus();
+  });
 $("week-view").onclick = () => changeView("week");
 $("day-view").onclick = () => changeView("day");
 $("map-toggle").onclick = () =>
@@ -940,9 +1087,29 @@ const officialConnection = createOfficialConnection({
       $("freshness").textContent = auth.checking
         ? "確認官方連線…"
         : "等待官方登入";
+    if (auth.checked && !auth.checking) applySignIn(auth.connected);
   },
   onConnected: load,
 });
+// Signed in → My re:Invent on the attendee's day; signed out → Explore (My re:Invent needs the official schedule).
+function applySignIn(connected) {
+  const signedIn = connected || officialPlanStatus === "live";
+  $("home-tabs").hidden = !signedIn;
+  if (state.tab === null) {
+    const tab = chooseTab({ signedIn, requested: requestedTab });
+    if (tab === "mine" && !dayFromURL) state.day = homeDay();
+    if (tab === "explore" && state.view === "day" && state.panel === "none" && !state.selection)
+      state.panel = "map";
+    calendar.changeView(
+      state.view === "week" ? "fiveDays" : "timeGridDay",
+      state.view === "week" ? DAYS[0] : state.day,
+    );
+    setTab(tab);
+    if (state.panel === "map") ensureScene();
+  } else if (!signedIn && state.tab === "mine") setTab("explore");
+  else if (signedIn && state.tab === "explore" && !userChoseTab && !requestedTab)
+    setTab("mine");
+}
 $("official-sign-in").onclick = async () => {
   const authorizationUrl = await officialConnection.start();
   if (!authorizationUrl) return;

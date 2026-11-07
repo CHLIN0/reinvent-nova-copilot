@@ -11,8 +11,11 @@
   let lastPlan = null;
   let signedIn = false;
 
-  const fab = el("button", null, "✦ Nova Copilot"); fab.id = "nc-fab"; fab.type = "button";
-  const panel = el("aside"); panel.id = "nc-panel"; panel.hidden = true;
+  // The toggle lives in the Event Atlas header; the panel docks on the right and stays open until toggled.
+  let toggle = document.getElementById("copilot-toggle");
+  if (!toggle) { toggle = el("button", "nc-btn2", "✦ Nova Copilot"); toggle.id = "copilot-toggle"; toggle.type = "button"; document.body.append(toggle); }
+  toggle.hidden = false;
+  const panel = el("aside"); panel.id = "nc-panel"; panel.hidden = true; panel.setAttribute("aria-label", "Nova Copilot");
   const head = el("div", "nc-head"); const title = el("b", null, "Nova Copilot");
   title.append(el("small", null, "Amazon Nova Pro · official API/MCP · route planning"));
   const close = el("button", "nc-x", "×"); close.type = "button"; head.append(title, close);
@@ -24,7 +27,10 @@
   const show = k => { for (const b of tabs.children) b.setAttribute("aria-selected", String(b.dataset.k === k)); for (const [n, d] of Object.entries(bodies)) d.hidden = n !== k; if (k === "profile") loadProfile(); };
   tabs.addEventListener("click", e => { if (e.target.dataset.k) show(e.target.dataset.k); });
 
-  const log = bodies.chat; log.append(el("div", "nc-empty", "Ask in any language. Nova Pro searches the official catalog, checks travel between venues and plans your day from your hotel."));
+  const log = bodies.chat;
+  const demo = el("div", "nc-note nc-demo", "Demo mode: you are signed out, so Copilot answers from the synthetic demo catalog. Sign in with “登入 AWS Events” on the page for the official catalog and your schedule.");
+  demo.hidden = true; log.append(demo);
+  log.append(el("div", "nc-empty", "Ask in any language. Nova Pro searches the official catalog, checks travel between venues and plans your day from your hotel."));
   const chips = el("div", "nc-chips");
   for (const q of ["Plan my Tuesday around AI agents and security, at most 8000 steps a day.", "我住 Park MGM，每天最多走 8000 步，幫我排週二的議程。", "How do I get from Wynn to Mandalay Bay at 10:00 on Tuesday with the fewest steps?", "What is on my schedule right now?"]) {
     const c = el("button", null, q); c.type = "button"; c.addEventListener("click", () => send(q)); chips.append(c);
@@ -40,10 +46,15 @@
   psave.addEventListener("click", e => { e.preventDefault(); pform.requestSubmit(); });
 
   panel.append(head, tabs, bodies.chat, bodies.day, bodies.profile, form, opt);
-  document.body.append(fab, panel);
-  fab.addEventListener("click", () => { panel.hidden = false; fab.hidden = true; show("chat"); ta.focus(); if (signedIn) briefing(); });
-  document.querySelector(".copilot-link")?.addEventListener("click", e => { e.preventDefault(); fab.click(); });
-  close.addEventListener("click", () => { panel.hidden = true; fab.hidden = false; });
+  document.body.append(panel);
+  const setOpen = open => {
+    panel.hidden = !open; toggle.setAttribute("aria-pressed", String(open));
+    document.body.classList.toggle("nc-docked", open);
+    window.dispatchEvent(new Event("resize"));  // Atlas's calendar and map re-measure the narrower page
+    if (open) { show("chat"); ta.focus(); }
+  };
+  toggle.addEventListener("click", () => setOpen(panel.hidden));
+  close.addEventListener("click", () => setOpen(false));
 
   async function loadProfile() {
     const p = await api("/api/profile"); pform.replaceChildren();
@@ -120,17 +131,24 @@
     return box;
   }
 
+  // Once per page load when signed in: shown inline at the top of My re:Invent and in the Ask tab.
   let briefed = false;
   async function briefing() {
     if (briefed) return; briefed = true;
-    const a = el("div", "nc-msg nc-bot", "Welcome back. Nova Pro is checking your official schedule and profile…"); log.append(a);
+    const inline = document.getElementById("mine-briefing");
+    const waiting = "Welcome back. Nova Pro is checking your official schedule and profile…";
+    const a = el("div", "nc-msg nc-bot", waiting); log.append(a);
+    const b = inline ? el("div", "nc-msg nc-bot", waiting) : null;
+    if (inline) { inline.replaceChildren(el("b", null, "Nova Copilot briefing"), b); inline.hidden = false; }
     try {
       const r = await api("/api/briefing", {});
       const head = r.first_visit ? "Welcome! " : r.schedule_diff ? "Since your last visit: " + ["reserved", "favorites"].map(k => `${k} +${r.schedule_diff[k].added.length}/−${r.schedule_diff[k].removed.length}`).join(", ") + "\n\n" : "";
-      a.textContent = head + r.text; if (r.trace.length) a.append(traceBox(r.trace));
-      if ((r.suggested || []).length) a.append(sessionCards(r.suggested));
+      for (const box of [a, b].filter(Boolean)) {
+        box.textContent = head + r.text; if (r.trace.length) box.append(traceBox(r.trace));
+        if ((r.suggested || []).length) box.append(sessionCards(r.suggested));
+      }
       if (r.plan) renderPlan(r.plan);
-    } catch (e) { a.textContent = "Briefing unavailable: " + e.message; }
+    } catch (e) { for (const box of [a, b].filter(Boolean)) box.textContent = "Briefing unavailable: " + e.message; }
   }
 
   async function send(text) {
@@ -164,14 +182,16 @@
         status = await api("/api/status"); // Reading the schedule may have refreshed the token.
       }
     } catch (e) { banner.textContent = "AWS Events: could not check sign-in status (" + e.message + ")"; banner.className = "nc-warn"; return; }
-    signedIn = status.signed_in;
+    signedIn = status.signed_in; demo.hidden = signedIn;
     const soon = status.signed_in && status.seconds_left != null && status.seconds_left <= 300;
     banner.textContent = status.signed_in
       ? `✓ AWS Events: signed in${status.seconds_left == null ? "" : ` · ${Math.ceil(status.seconds_left / 60)} min left`}${soon ? " · sign in again soon" : ""}${status.refreshable ? " · automatic refresh available" : ""}`
-      : status.reason === "restarted" ? "The app restarted, please sign in again."
-      : "AWS Events: please sign in again.";
+      : status.reason === "restarted" ? "The app restarted, please sign in again with “登入 AWS Events”."
+      : "AWS Events: please sign in again with “登入 AWS Events”.";
     banner.className = status.signed_in && !soon ? "nc-ok" : "nc-warn";
-    if (!status.signed_in || soon) {
+    // One sign-in control: signed out, Event Atlas's “登入 AWS Events” is it. Only while still signed in but
+    // about to expire (Atlas shows “已登入”, disabled) does the banner offer the re-sign-in.
+    if (soon) {
       const signIn = el("button", "nc-btn2", "Sign in with AWS Builder ID"); signIn.type = "button";
       signIn.disabled = !!status.sign_in?.running;
       signIn.addEventListener("click", async () => {
@@ -181,6 +201,7 @@
       });
       banner.append(document.createTextNode(" "), signIn);
     }
+    if (signedIn) briefing();
     if (scheduleError) { banner.append(document.createTextNode(" · Could not read your official schedule (" + scheduleError + ")")); banner.className = "nc-warn"; }
     if (!status.signed_in || !s?.signed_in) return;
     if (!lastPlan) { const box = bodies.day; box.replaceChildren(el("div", "nc-note", "Your official schedule (AWS Events GetSchedule). Ask Copilot to plan around it."), scheduleList("Reserved", s.reserved), scheduleList("Favorites", s.favorites)); }

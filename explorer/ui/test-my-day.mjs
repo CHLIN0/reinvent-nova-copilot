@@ -1,0 +1,103 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import {
+  chooseTab,
+  homeDay,
+  dayAgenda,
+  dayCounts,
+  freeLabel,
+} from "./src/my-day.mjs";
+
+const item = (code, source, start, end) => ({
+  code,
+  source,
+  title: code,
+  session_id: code,
+  start: `${start.length === 5 ? "2026-11-30T" + start : start}:00-08:00`,
+  end: `${end.length === 5 ? "2026-11-30T" + end : end}:00-08:00`,
+});
+
+test("signed in opens My re:Invent; signed out opens Explore", () => {
+  assert.equal(chooseTab({ signedIn: true }), "mine");
+  assert.equal(chooseTab({ signedIn: true, requested: null }), "mine");
+  assert.equal(chooseTab({ signedIn: false }), "explore");
+  assert.equal(chooseTab({ signedIn: false, requested: "mine" }), "explore");
+  assert.equal(chooseTab({ signedIn: true, requested: "explore" }), "explore");
+  assert.equal(chooseTab({ signedIn: true, requested: "bogus" }), "mine");
+});
+
+test("the day is the first conference day until it arrives, then today (Las Vegas date)", () => {
+  assert.equal(homeDay(new Date("2026-11-07T12:00:00Z")), "2026-11-30");
+  // 2026-11-30 07:30 UTC is still 11-29 in Las Vegas.
+  assert.equal(homeDay(new Date("2026-11-30T07:30:00Z")), "2026-11-30");
+  assert.equal(homeDay(new Date("2026-11-30T09:00:00-08:00")), "2026-11-30");
+  assert.equal(homeDay(new Date("2026-12-02T23:30:00-08:00")), "2026-12-02");
+  assert.equal(homeDay(new Date("2026-12-04T08:00:00-08:00")), "2026-12-04");
+  assert.equal(homeDay(new Date("2026-12-06T08:00:00-08:00")), "2026-11-30");
+});
+
+test("gaps between reserved sessions carry their length, picks inside them are nested", () => {
+  const plan = [
+    item("GHJ308", "reserved", "13:30", "15:30"),
+    item("CMP321", "reserved", "09:00", "10:00"),
+    item("INV538", "reserved", "10:30", "11:30"),
+    item("FAV1", "favorite", "12:00", "13:00"),
+    item("LOC1", "local", "15:00", "16:00"),
+    item("OTHERDAY", "reserved", "2026-12-01T09:00", "2026-12-01T10:00"),
+  ];
+  const rows = dayAgenda(plan, "2026-11-30");
+  assert.deepEqual(
+    rows.map((r) =>
+      r.kind === "gap"
+        ? `gap ${r.label} [${r.items.map((p) => p.code)}]`
+        : r.item.code,
+    ),
+    [
+      "CMP321",
+      "gap 30 min free []",
+      "INV538",
+      "gap 2 h free [FAV1]",
+      "GHJ308",
+      "LOC1",
+    ],
+  );
+  assert.equal(rows[3].minutes, 120);
+  assert.equal(dayAgenda(plan, "2026-12-01").length, 1);
+  assert.deepEqual(dayAgenda(plan, "2026-12-02"), []);
+});
+
+test("overlapping or back-to-back reservations leave no gap; short gaps are not shown", () => {
+  const rows = dayAgenda(
+    [
+      item("A", "reserved", "09:00", "11:00"),
+      item("B", "reserved", "10:00", "10:30"),
+      item("C", "reserved", "11:00", "12:00"),
+      item("D", "reserved", "12:10", "13:00"),
+      item("E", "reserved", "14:00", "15:00"),
+    ],
+    "2026-11-30",
+  );
+  assert.deepEqual(
+    rows.map((r) => (r.kind === "gap" ? r.label : r.item.code)),
+    ["A", "B", "C", "D", "1 h free", "E"],
+  );
+});
+
+test("items without times are left out; counts per day", () => {
+  const plan = [
+    { code: "X", source: "reserved", start: "", end: "" },
+    item("A", "favorite", "09:00", "10:00"),
+  ];
+  assert.deepEqual(
+    dayAgenda(plan, "2026-11-30").map((r) => r.item.code),
+    ["A"],
+  );
+  assert.equal(dayCounts(plan)["2026-11-30"], 1);
+  assert.equal(dayCounts(plan)["2026-12-01"], 0);
+});
+
+test("free labels", () => {
+  assert.equal(freeLabel(120), "2 h free");
+  assert.equal(freeLabel(90), "1 h 30 min free");
+  assert.equal(freeLabel(45), "45 min free");
+});
