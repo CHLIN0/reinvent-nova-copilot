@@ -1,0 +1,217 @@
+{
+  "version": 1,
+  "source": "Saved public OpenStreetMap / Overpass sample",
+  "source_file": "data/osm/osm-public-sample.json",
+  "source_timestamp": "2026-10-24T14:41:20Z",
+  "attribution": "© OpenStreetMap contributors",
+  "license": "ODbL 1.0",
+  "license_url": "https://www.openstreetmap.org/copyright",
+  "geometry_policy": "Actual source polygons, stitched multipolygons and holes; no synthetic building or room geometry.",
+  "height_policy": "Only explicit metric community height tags are extruded. Unknown heights stay flat; levels, layer and elevation never infer height.",
+  "identity_policy": "Venue bindings follow geometry-audit.json. Unnamed MGM building part is spatial evidence only; station way/1557762828 is excluded from venue bindings.",
+  "feature_count": 3066,
+  "building_count": 1460,
+  "road_count": 1606,
+  "venues": [
+    {
+      "id": "venetian",
+      "source_ids": [
+        "relation/7770314",
+        "way/30618090",
+        "way/111367819"
+      ],
+      "bounds": [
+        [
+          -115.1707693,
+          36.1201194
+        ],
+        [
+          -115.164308,
+          36.1234855
+        ]
+      ],
+      "center": [
+        -115.16753865000001,
+        36.121802450000004
+      ]
+    },
+    {
+      "id": "forum",
+      "source_ids": [
+        "way/762169780"
+      ],
+      "bounds": [
+        [
+          -115.1679836,
+          36.1180197
+        ],
+        [
+          -115.1643936,
+          36.1198542
+        ]
+      ],
+      "center": [
+        -115.1661886,
+        36.11893695
+      ]
+    },
+    {
+      "id": "palace",
+      "source_ids": [
+        "way/115672893",
+        "way/134949715"
+      ],
+      "bounds": [
+        [
+          -115.1794537,
+          36.1150138
+        ],
+        [
+          -115.1738522,
+          36.1182357
+        ]
+      ],
+      "center": [
+        -115.17665295,
+        36.11662475
+      ]
+    },
+    {
+      "id": "mgm",
+      "source_ids": [
+        "way/116770006",
+        "way/27897924",
+        "way/115093734"
+      ],
+      "bounds": [
+        [
+          -115.1725194,
+          36.1011552
+        ],
+        [
+          -115.1640811,
+          36.1052303
+        ]
+      ],
+      "center": [
+        -115.16830025,
+        36.103192750000005
+      ]
+    },
+    {
+      "id": "wynn",
+      "source_ids": [
+        "way/205501268"
+      ],
+      "bounds": [
+        [
+          -115.1660161,
+          36.125622
+        ],
+        [
+          -115.1652463,
+          36.1276802
+        ]
+      ],
+      "center": [
+        -115.1656312,
+        36.126651100000004
+      ]
+    },
+    {
+      "id": "encore",
+      "source_ids": [
+        "way/135291730",
+        "way/27910891"
+      ],
+      "bounds": [
+        [
+          -115.166579,
+          36.1265346
+        ],
+        [
+          -115.1623541,
+          36.1300891
+        ]
+      ],
+      "center": [
+        -115.16446655,
+        36.12831185
+      ]
+    }
+  ],
+  "street_labels": [
+    {
+      "name": "South Las Vegas Boulevard",
+      "center": [
+        -115.1728002,
+        36.1057435
+      ],
+      "source_id": "way/264399445"
+    },
+    {
+      "name": "East Flamingo Road",
+      "center": [
+        -115.1705227,
+        36.1145734
+      ],
+      "source_id": "way/157020536"
+    },
+    {
+      "name": "West Flamingo Road",
+      "center": [
+        -115.177719,
+        36.1146935
+      ],
+      "source_id": "way/27831417"
+    },
+    {
+      "name": "Sands Avenue",
+      "center": [
+        -115.1663801,
+        36.123382
+      ],
+      "source_id": "way/759655748"
+    },
+    {
+      "name": "Koval Lane",
+      "center": [
+        -115.1639626,
+        36.1139494
+      ],
+      "source_id": "way/1016805774"
+    },
+    {
+      "name": "Paradise Road",
+      "center": [
+        -115.1547007,
+        36.1344521
+      ],
+      "source_id": "way/601657174"
+    },
+    {
+      "name": "East Tropicana Avenue",
+      "center": [
+        -115.1669496,
+        36.1008034
+      ],
+      "source_id": "way/435180339"
+    },
+    {
+      "name": "Spring Mountain Road",
+      "center": [
+        -115.1771647,
+        36.1260825
+      ],
+      "source_id": "way/27831613"
+    },
+    {
+      "name": "East Desert Inn Road",
+      "center": [
+        -115.1606559,
+        36.1295636
+      ],
+      "source_id": "way/111087829"
+    }
+  ]
+}

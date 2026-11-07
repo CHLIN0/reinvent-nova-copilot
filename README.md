@@ -27,6 +27,10 @@ This project started from a Nova Pro prompt that was tuned to give re:Invent vet
 
 Prompt approach: it keeps the Nova Pro prompt structure and re:Invent veteran attitude from the author's prompt-only advisor, but flips the old rule "never state specifics" into **"look specifics up with tools and cite them; never state one that no tool returned."**
 
+## Event Atlas
+
+`explorer/` is the author's Event Atlas agenda explorer (calendars + 3D campus), built earlier in the hackathon period on the same official API and now served by `web.py` in the same process and origin. Third-party components are listed in `explorer/THIRD_PARTY_NOTICES.md` (map data (c) OpenStreetMap contributors, ODbL). Rebuild its UI with `cd explorer/ui && npm ci && npm run build`.
+
 ## Architecture
 
 ```
@@ -53,7 +57,22 @@ Prompt approach: it keeps the Nova Pro prompt structure and re:Invent veteran at
 - AWS credentials with Amazon Bedrock access to Amazon Nova Pro (`us.amazon.nova-pro-v1:0`, default region `us-east-1`)
 - For live catalog data: an AWS Builder ID that is registered for re:Invent 2026. Without it, the app uses a clearly labelled **synthetic** demo catalog.
 
-## Run
+## Run the web app (recommended)
+
+```sh
+pip install -r requirements.txt
+cp .env.example .env   # add Bedrock credentials, or use AWS_PROFILE
+python3 web.py --profile yourname
+```
+
+Open http://127.0.0.1:8500/ . One page, one sign-in:
+
+- **Event Atlas** (main view): the official catalog with multi-select filters, five-day and single-day calendars, and a 3D campus map built from OpenStreetMap footprints.
+- **Nova Copilot** (button at bottom right): Amazon Nova Pro answers with tool-checked facts, plans your day from and back to your hotel with route estimates, and adds the plan to your Event Atlas calendar in one click.
+- **Sign in with AWS Builder ID** once; both views share the same in-memory token. Without sign-in, the copilot uses the synthetic demo catalog.
+- `/copilot` is a chat-only view.
+
+## Run (command line)
 
 ```sh
 pip install -r requirements.txt

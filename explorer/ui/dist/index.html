@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>Event Atlas · re:Invent 2026</title>
+    <link rel="stylesheet" href="/app.css" />
+  </head>
+  <body>
+    <header class="masthead">
+      <a class="brand" href="#"
+        ><span class="brand-mark" aria-hidden="true">r:</span
+        ><span
+          >Event Atlas <b>2026</b
+          ><small>LAS VEGAS / NOV 30 — DEC 4</small></span
+        ></a
+      >
+      <div class="heading-copy">
+        <h1>找到議程，看見時間與位置。</h1>
+        <p>re:Invent · 議程探索與會場方位</p>
+      </div>
+      <a class="copilot-link" href="http://127.0.0.1:8500/" style="font-weight:600;white-space:nowrap">Nova Copilot: plan with AI →</a>
+      <div class="source-pill">
+        <span class="live-dot"></span
+        ><span id="freshness" role="status">確認官方連線…</span
+        ><button id="reload" type="button" aria-label="重新讀取官方議程">
+          ↻
+        </button>
+      </div>
+    </header>
+    <main>
+      <section
+        class="official-connection"
+        aria-label="AWS Events 官方連線"
+        data-connected="false"
+      >
+        <div>
+          <p id="connection-status" role="status">正在確認官方連線…</p>
+          <p class="connection-note">
+            請使用已註冊 re:Invent
+            的帳號。登入授權只保留在這次本機服務的記憶體；服務重新啟動後需再次登入。
+          </p>
+        </div>
+        <button id="official-sign-in" type="button" disabled>
+          登入 AWS Events
+        </button>
+      </section>
+      <section class="controlbar" aria-label="日曆與篩選">
+        <div class="view-row">
+          <div class="segmented" role="group" aria-label="日曆視角">
+            <button id="week-view" aria-pressed="true">五天</button
+            ><button id="day-view" aria-pressed="false">單天</button>
+          </div>
+          <div
+            id="dates"
+            class="date-tabs"
+            role="group"
+            aria-label="選擇日期"
+          ></div>
+          <div class="view-actions">
+            <button id="plan-view" aria-pressed="false">
+              我的安排 <span id="plan-count">0</span></button
+            ><button id="map-toggle" aria-pressed="false">顯示方位</button>
+          </div>
+        </div>
+        <form id="filters" class="filter-row" role="search">
+          <label class="search"
+            ><span aria-hidden="true">⌕</span
+            ><input
+              id="query"
+              aria-label="搜尋議程"
+              placeholder="搜尋題目、代碼、摘要、講者"
+              type="search"
+              autocomplete="off" /></label
+          ><button id="clear" class="quiet" type="button">清除條件</button>
+        </form>
+        <div class="discovery-row">
+          <div
+            id="facet-controls"
+            class="facet-controls"
+            aria-label="複選篩選"
+          ></div>
+          <div class="time-window">
+            <span>每日時段（同日）</span>
+            <input id="from" type="time" aria-label="每日時段開始" />
+            <span>—</span
+            ><input id="to" type="time" aria-label="每日時段結束" />
+          </div>
+        </div>
+        <p id="time-status" class="time-status" role="status" hidden>
+          時段結束須晚於開始；這個條件只篩選同一天內的時段。請調整時間或清除條件。
+        </p>
+        <div
+          id="filter-chips"
+          class="filter-chips"
+          aria-label="已選篩選條件"
+        ></div>
+        <div class="filter-help">
+          同組可複選（任一符合），不同組同時套用。條件保存在這個瀏覽器。
+        </div>
+      </section>
+      <div class="context-row">
+        <p>
+          <strong id="visible-count">—</strong
+          ><span id="context-description"> 場議程</span
+          ><span id="selection-status"></span>
+        </p>
+        <span class="timezone"
+          >拉斯維加斯 · PST UTC−08 <span class="divider">/</span> 依會場著色 ·
+          重疊可保留</span
+        >
+      </div>
+      <div id="notice" class="notice" role="status" hidden></div>
+      <div id="workspace" class="workspace" data-view="week" data-panel="none">
+        <section class="calendar-pane" aria-label="議程日曆">
+          <div class="calendar-modebar">
+            <div class="segmented" role="group" aria-label="議程排列方式">
+              <button id="layout-stack" aria-pressed="true">合併卡疊</button>
+              <button id="layout-overlap" aria-pressed="false">重疊時間</button>
+              <button id="layout-columns" aria-pressed="false">並排時間</button>
+            </div>
+            <span id="layout-description"
+              >按開始時段收納，展開比較全部議程</span
+            >
+          </div>
+          <div id="stack-calendar"></div>
+          <div id="calendar" hidden></div>
+          <div id="empty" class="empty" hidden>
+            <strong>目前沒有符合的議程</strong>
+            <p>調整篩選條件，或清除條件查看完整目錄。</p>
+          </div>
+          <details id="unplaced" class="unplaced">
+            <summary id="unplaced-title">未能排入日曆的議程</summary>
+            <div id="unplaced-list"></div>
+          </details>
+        </section>
+        <aside
+          id="side-pane"
+          class="side-pane"
+          aria-label="選取議程與會場方位"
+          hidden
+        >
+          <div class="side-tabs" role="tablist" aria-label="議程詳情視角">
+            <button
+              id="abstract-tab"
+              role="tab"
+              aria-selected="true"
+              aria-controls="reader-panel"
+            >
+              完整摘要</button
+            ><button
+              id="map-tab"
+              role="tab"
+              aria-selected="false"
+              aria-controls="map-panel"
+            >
+              會場方位</button
+            ><button id="close-panel" class="close" aria-label="關閉側欄">
+              ×
+            </button>
+          </div>
+          <section
+            id="reader-panel"
+            class="reader-panel"
+            role="tabpanel"
+            aria-labelledby="abstract-tab"
+          >
+            <div id="reader" class="reader">
+              <p class="reader-placeholder">點選日曆中的議程，閱讀完整摘要。</p>
+            </div>
+          </section>
+          <section
+            id="map-panel"
+            class="map-panel"
+            role="tabpanel"
+            aria-labelledby="map-tab"
+            hidden
+          >
+            <div class="map-toolbar">
+              <div
+                class="segmented"
+                role="group"
+                aria-label="同一地圖場景的視角"
+              >
+                <button id="oblique" aria-pressed="true">斜視 3D</button
+                ><button id="top" aria-pressed="false">俯視</button>
+              </div>
+              <button id="north" class="quiet" aria-label="地圖北朝上">
+                N ↑
+              </button>
+            </div>
+            <div class="map-stage">
+              <div id="map" aria-label="拉斯維加斯會場與街廓"></div>
+              <span class="map-scope" id="map-scope"
+                >本週可見議程合計，非同時</span
+              >
+            </div>
+            <div class="map-footer">
+              <div id="venue-spotlight">
+                <strong>六個會場，同一個城市場景</strong>
+                <p>點會場看位置；要限縮議程，再使用「篩選此會場」。</p>
+              </div>
+              <p id="map-status" role="status">準備圖資…</p>
+              <p class="attribution">
+                ©
+                <a
+                  href="https://www.openstreetmap.org/copyright"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  >OpenStreetMap contributors</a
+                >
+                · ODbL · 2026-10-24<br />未知高度保留平面輪廓；房間與入口尚未定位。
+              </p>
+            </div>
+          </section>
+        </aside>
+      </div>
+      <footer class="page-footer">
+        <span>官方議程唯讀 · 個人安排只存在這個瀏覽器</span>
+        <details>
+          <summary>資料範圍</summary>
+          <p>
+            本工具直接透過 AWS Events 官方 API
+            讀取議程，需要你自行登入。議程資料不代表即時席位；加入／移除只修改這個瀏覽器的本機安排，不會送出官方預約。不同資料來源的既有安排保留待核對，不會自動轉換場次。
+          </p>
+        </details>
+      </footer>
+    </main>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
