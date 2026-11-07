@@ -16,9 +16,20 @@ def _field(call: Any, key: str) -> Any:
     return call.get(key) if isinstance(call, dict) else getattr(call, key, None)
 
 
+UNRESOLVED_KEY = "reservations_not_applied"
+
+
+def _has_unresolved(result: Any) -> bool:
+    if isinstance(result, dict):
+        return bool(result.get(UNRESOLVED_KEY))
+    return isinstance(result, str) and f'"{UNRESOLVED_KEY}"' in result  # web.py may shorten results to text
+
+
 def feasibility_verified(trace: list) -> bool:
-    """True if a check_itinerary or plan_itinerary call succeeded. Trace items are ToolCall objects or dicts."""
-    return any(_field(c, "name") in VERIFYING_TOOLS and _field(c, "ok") for c in trace or [])
+    """True if a check_itinerary or plan_itinerary call succeeded and none of them reported a reservation
+    that could not be checked. Trace items are ToolCall objects or dicts."""
+    checks = [c for c in trace or [] if _field(c, "name") in VERIFYING_TOOLS and _field(c, "ok")]
+    return bool(checks) and not any(_has_unresolved(_field(c, "result")) for c in checks)
 
 
 def strip_unverified_feasibility(text: str, trace: list) -> tuple[str, list[str]]:
