@@ -332,7 +332,8 @@ def _call(name: str, args: dict, be: Backend) -> Any:
         if pre_dropped and isinstance(result, dict):
             result.setdefault("dropped", [])
             result["dropped"] = pre_dropped + list(result["dropped"])
-        flagged = [s for s in pool if s.get("conflict")]
+        chosen_ids = {c.get("id") for c in (result.get("chosen") or [])} if isinstance(result, dict) else set()
+        flagged = [s for s in pool if s.get("conflict") and s["id"] in chosen_ids]
         if flagged and isinstance(result, dict):  # a must-attend session breaks a stated limit: not feasible
             result["feasible"] = False
             result["limit_conflicts"] = [{**_brief(s, 0), "reason": s["conflict"]} for s in flagged]
@@ -417,14 +418,14 @@ def _schedule_lock(be: Backend, days: set[str]) -> dict:
     Reserved sessions become must-attend and blocked windows; favorites become priority candidates.
     The model cannot leave them out because the tools load them themselves.
     """
-    lock: dict[str, Any] = {"reserved": [], "favorites": [], "blocked": [], "unresolved": [], "error": None}
+    lock: dict[str, Any] = {"reserved": [], "favorites": [], "blocked": [], "unresolved": []}
     if not days or not _signed_in():
         return lock
     try:
         sched = be.get_schedule() or {}
-    except Exception as e:
-        lock["error"] = f"{type(e).__name__}: {e}"
-        return lock
+    except Exception as e:  # never plan or check as if there were no reservations
+        raise ToolError(f"The attendee's official reservations could not be loaded ({type(e).__name__}: {e}); "
+                        "not planning or checking without them. Say so and suggest retrying shortly.") from e
     reserved_ids = set()
     for key in ("reserved", "favorites"):
         for sid in _schedule_ids(sched.get(key)):
@@ -450,8 +451,6 @@ def _schedule_lock(be: Backend, days: set[str]) -> dict:
 def _with_lock(out: dict, lock: dict) -> dict:
     if lock["reserved"] or _signed_in():
         out["locked_from_schedule"] = [s.get("code") or s["id"] for s in lock["reserved"]]
-    if lock["error"]:
-        out["schedule_lock_error"] = lock["error"] + " (official reservations were NOT applied)"
     if lock["unresolved"]:
         out["reservations_not_applied"] = {"ids": lock["unresolved"],
                                            "reason": "not in the loaded catalog or without a start/end time"}
