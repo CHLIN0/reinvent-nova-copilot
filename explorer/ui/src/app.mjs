@@ -543,25 +543,58 @@ async function renderReader(r) {
     actions,
     el("p", "local-note", "只修改本機安排，不提交 RSVP；可以保留重疊。"),
   );
-  const lang = el("div", "language-tabs");
-  const english = button("原文", () => showLanguage("original"));
-  english.setAttribute("aria-pressed", "true");
-  const chinese = button("繁中翻譯", () => showLanguage("zh"));
-  chinese.disabled = true;
-  lang.append(english, chinese);
-  root.append(lang);
+  const translateButton = button(
+    "翻譯 / Translate",
+    requestTranslation,
+    "secondary",
+  );
+  actions.append(translateButton);
   const abstract = el(
     "div",
     "abstract-text",
     r.session.abstract || "目前來源未提供摘要。",
   );
-  root.append(abstract);
-  const transNote = el(
-    "p",
-    "translation-note",
-    "保留來源完整文字。繁中譯文僅在已有且原文指紋相符時提供。",
-  );
-  root.append(transNote);
+  const translated = el("section", "session-translation");
+  translated.hidden = true;
+  translated.setAttribute("aria-label", "Session translation");
+  const transNote = el("p", "translation-note", "按需翻譯，原文保留供核對。");
+  transNote.setAttribute("role", "status");
+  root.append(abstract, transNote, translated);
+  async function requestTranslation() {
+    translateButton.disabled = true;
+    transNote.textContent = "翻譯中… / Translating…";
+    translated.setAttribute("aria-busy", "true");
+    try {
+      const profileResponse = await fetch("/api/profile");
+      if (!profileResponse.ok) throw new Error("profile_unavailable");
+      const profile = await profileResponse.json();
+      const lang = profile.fields?.language || "zh-Hant";
+      const response = await fetch(
+        `/api/translate/${encodeURIComponent(r.session.session_id)}?lang=${encodeURIComponent(lang)}`,
+      );
+      const translation = await response.json();
+      if (!response.ok)
+        throw new Error(translation.error || "translation_unavailable");
+      if (token !== readerVersion) return;
+      translated.lang = translation.lang;
+      translated.replaceChildren(
+        el("h3", "detail-title", translation.title),
+        el("div", "abstract-text", translation.abstract),
+      );
+      translated.hidden = false;
+      transNote.textContent =
+        translation.source === "official"
+          ? `官方翻譯 / Official translation · ${translation.lang}`
+          : `非官方翻譯 / unofficial translation (Nova) · ${translation.lang}${translation.cached ? " · 快取 / cached" : ""}`;
+    } catch {
+      if (token === readerVersion)
+        transNote.textContent =
+          "翻譯暫時無法使用，請重試。 / Translation unavailable; please retry.";
+    } finally {
+      translateButton.disabled = false;
+      translated.setAttribute("aria-busy", "false");
+    }
+  }
   for (const [label, items, kind] of [
     ["官方目錄標籤", r.officialFacets.map((f) => f.label), "official"],
     [
@@ -613,34 +646,6 @@ async function renderReader(r) {
       `來源：${r.session.source || "既有公開目錄"} · ${observationLabel(r.session.observed_at)}。${sourceTimingNote(r.session.source)}`,
     ),
   );
-  let translation = null;
-  function showLanguage(mode) {
-    english.setAttribute("aria-pressed", String(mode === "original"));
-    chinese.setAttribute("aria-pressed", String(mode === "zh"));
-    abstract.textContent =
-      mode === "zh" ? translation.abstract_translation : r.session.abstract;
-    transNote.textContent =
-      mode === "zh"
-        ? "AI 繁中完整譯文 · 非官方翻譯；可切回原文核對。"
-        : "保留來源完整文字。";
-  }
-  try {
-    const hash = await abstractHash(r.session.abstract || "");
-    if (token !== readerVersion) return;
-    translation = translations.find(
-      (t) =>
-        t.session_id === r.session.session_id &&
-        t.source_abstract_sha256 === hash,
-    );
-    if (translation) {
-      chinese.disabled = false;
-      transNote.textContent = "此篇已有繁中完整譯文，可切換閱讀；非官方翻譯。";
-    } else
-      transNote.textContent = "此篇尚無對應的繁中完整譯文，先顯示來源原文。";
-  } catch {
-    if (token === readerVersion)
-      transNote.textContent = "無法核對譯文版本，保留原文。";
-  }
 }
 async function changePlan(item, action) {
   if (planUnavailable) {

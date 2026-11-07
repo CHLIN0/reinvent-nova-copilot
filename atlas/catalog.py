@@ -114,7 +114,7 @@ def _retry_after(headers):
     return 1.0
 
 
-def _request(method, path, query=None, body=None, authenticated=True):
+def _request(method, path, query=None, body=None, authenticated=True, response_headers=None):
     """One API call with 401/403 mapping and Retry-After-aware 429 retries."""
     for attempt in range(MAX_429_RETRIES + 1):
         token = None
@@ -152,6 +152,8 @@ def _request(method, path, query=None, body=None, authenticated=True):
             raise CatalogError("catalog_invalid") from None
         if not isinstance(data, dict):
             raise CatalogError("catalog_invalid")
+        if response_headers is not None:
+            response_headers.update({k.lower(): v for k, v in (headers or {}).items()})
         return data
     raise CatalogError("official_rate_limited")
 
@@ -401,6 +403,16 @@ def get_session(session_id: str, source: str = "auto"):
         if s.get("id") == session_id or (s.get("code") and s.get("code") == session_id):
             return s
     return None
+
+
+def get_session_localized(session_id: str, locale: str, event_id: str = EVENT_ID) -> dict:
+    """Official GetSession, preserving the actual Content-Language (never assume locale)."""
+    headers = {}
+    data = _request("GET", "/v1/events/" + quote(event_id, safe="") + "/sessions/"
+                    + quote(session_id, safe=""), {"locale": locale}, response_headers=headers)
+    session = normalize_session(data.get("session"))
+    session["content_language"] = headers.get("content-language") or ""
+    return session
 
 
 # ---------------------------------------------------------------------------

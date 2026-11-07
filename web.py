@@ -19,7 +19,7 @@ from atlas.env import load_dotenv
 
 load_dotenv()
 
-from atlas import catalog, official_auth, profile  # noqa: E402
+from atlas import catalog, official_auth, profile, translate  # noqa: E402
 from atlas.agent import Agent  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent / "web"
@@ -348,6 +348,21 @@ class Handler(BaseHTTPRequestHandler):
         if not self._host_ok():
             return self._json(403, {"error": "forbidden host"})
         path_only = self.path.split("?", 1)[0]
+        if path_only.startswith("/api/translate/"):
+            from urllib.parse import parse_qs, unquote, urlsplit
+
+            try:
+                query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+                lang = (query["lang"][0] if "lang" in query else
+                        profile.load_profile()["fields"].get("language") or "zh-Hant")
+                result = translate.translate_session(unquote(path_only[len("/api/translate/"):]), lang)
+                return self._json(200, result)
+            except ValueError as e:
+                return self._json(400, {"error": str(e)})
+            except translate.TranslationError as e:
+                return self._json(404 if e.code == "session_not_found" else 502, {"error": e.code})
+            except Exception as e:  # Never expose Bedrock errors or credential details.
+                return self._json(502, {"error": getattr(e, "code", "translation_unavailable")})
         if path_only in ("/", "/index.html") and _state.get("explorer_port"):
             html = (EXPLORER_DIST / "index.html").read_text(encoding="utf-8")
             html = html.replace("</head>", '<link rel="stylesheet" href="/copilot.css" />\n</head>', 1)
