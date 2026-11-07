@@ -80,6 +80,27 @@
   }
 
   // Writes into Event Atlas's own local plan (IndexedDB "reinvent.local-plan.v2"), using the item format of Atlas's makePlanItem.
+  async function atlasItems(ids) {
+    const cat = await api("/api/catalog");
+    const byId = new Map((cat.sessions || []).map(s => [s.session_id, s]));
+    const items = [];
+    for (const id of ids) {
+      const s = byId.get(id); if (!s) continue;
+      items.push({placement: JSON.stringify([s.source, s.session_id, s.start_local, s.end_local]), key: JSON.stringify([s.source, s.session_id]),
+        code: String(s.code || ""), title: String(s.title || ""), start: String(s.start_local || ""), end: String(s.end_local || ""), location: String(s.location || ""), addedAt: new Date().toISOString()});
+    }
+    return items;
+  }
+  async function writeAtlas(items) {
+    const db = await new Promise((res, rej) => { const r = indexedDB.open("reinvent.local-plan.v2", 1); r.onupgradeneeded = () => { if (!r.result.objectStoreNames.contains("plan")) r.result.createObjectStore("plan"); }; r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+    let added = 0;
+    await new Promise((res, rej) => {
+      const tx = db.transaction("plan", "readwrite"); const st = tx.objectStore("plan"); const g = st.get("current");
+      g.onsuccess = () => { const cur = (g.result && Array.isArray(g.result.items)) ? g.result.items : []; const fresh = items.filter(i => !cur.some(p => p.placement === i.placement)); added = fresh.length; if (added) st.put({version: 1, items: cur.concat(fresh)}, "current"); };
+      tx.oncomplete = res; tx.onerror = () => rej(tx.error); tx.onabort = () => rej(tx.error);
+    });
+    db.close(); return added;
+  }
   async function addToAtlas(chosen, msg) {
     try {
       const cat = await api("/api/catalog");
@@ -115,4 +136,28 @@
   }
   form.addEventListener("submit", e => { e.preventDefault(); const v = ta.value.trim(); if (v) { ta.value = ""; send(v); } });
   ta.addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); form.requestSubmit(); } });
+
+  // Official schedule: proves the sign-in is real (data comes from AWS Events GetSchedule) and shows RSVPs in Atlas.
+  const banner = el("div"); banner.id = "nc-banner"; document.body.append(banner);
+  function scheduleList(title, rows) {
+    const box = el("div"); box.append(el("div", "nc-t", `${title} (${rows.length})`));
+    const ul = el("ul", "nc-tl");
+    for (const r of rows) { const li = el("li"); li.append(el("div", "nc-t", `${(r.start || "").slice(5, 10)} ${hhmm(r.start)}–${hhmm(r.end)}  ${r.code || ""}`), el("div", null, r.title || r.id), el("div", "nc-sub", [r.venue_name || r.venue, r.room].filter(Boolean).join(" · "))); ul.append(li); }
+    box.append(rows.length ? ul : el("div", "nc-empty", "None")); return box;
+  }
+  async function loadOfficial() {
+    let s;
+    try { s = await api("/api/my-schedule"); } catch (e) { banner.textContent = "AWS Events: could not read your official schedule (" + e.message + ")"; banner.className = "nc-warn"; return; }
+    if (!s.signed_in) { banner.textContent = "Not signed in to AWS Events: Copilot uses demo data. Use “登入 AWS Events” above."; banner.className = "nc-warn"; return; }
+    banner.textContent = `✓ Signed in to AWS Events (official API) · ${s.reserved.length} reserved · ${s.favorites.length} favorites · read ${new Date(s.fetched_at).toLocaleTimeString()}`;
+    banner.className = "nc-ok";
+    if (!lastPlan) { const box = bodies.day; box.replaceChildren(el("div", "nc-note", "Your official schedule (AWS Events GetSchedule). Ask Copilot to plan around it."), scheduleList("Reserved", s.reserved), scheduleList("Favorites", s.favorites)); }
+    try {
+      const items = await atlasItems(s.reserved.concat(s.favorites).map(r => r.id));
+      const added = await writeAtlas(items);
+      if (added && sessionStorage.getItem("nc-synced") !== s.fetched_at) { sessionStorage.setItem("nc-synced", s.fetched_at); location.reload(); }
+    } catch (e) { /* Atlas catalog not ready yet; the list above still shows the official schedule */ }
+  }
+  loadOfficial();
+  setInterval(() => { if (banner.className !== "nc-ok") loadOfficial(); }, 5000);
 })();

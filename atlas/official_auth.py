@@ -342,7 +342,7 @@ def get_access_token():
     return auth.access_token()
 
 
-def sign_in(open_browser=True, timeout=300, ports=CALLBACK_PORTS, announce=print):
+def sign_in(open_browser=True, timeout=300, ports=CALLBACK_PORTS, announce=print, return_url=None):
     """Interactive Builder ID sign-in via OAuth PKCE and a one-shot loopback callback.
 
     Binds the first free port in 8484-8488 on 127.0.0.1 only, opens the authorize
@@ -373,6 +373,16 @@ def sign_in(open_browser=True, timeout=300, ports=CALLBACK_PORTS, announce=print
                     ok = True
                 except OAuthError as error:
                     result["error"] = error.code
+            if ok and return_url:
+                self.send_response(303)
+                self.send_header("Location", return_url)
+                self.send_header("Content-Length", "0")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Referrer-Policy", "no-referrer")
+                self.end_headers()
+                if parsed.path == "/callback":
+                    result["done"] = True
+                return
             body = (b"Signed in. You can close this tab and return to the terminal." if ok
                     else b"Sign-in did not complete. Return to the terminal and retry.")
             self.send_response(200 if ok else 400)

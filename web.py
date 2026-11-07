@@ -72,7 +72,7 @@ def _start_sign_in() -> dict:
 
     def run() -> None:
         try:
-            official_auth.sign_in(open_browser=False, announce=announce)
+            official_auth.sign_in(open_browser=False, announce=announce, return_url=f"http://127.0.0.1:{_state.get('port', 8500)}/?signin=complete")
             catalog.clear_cache()
             from atlas import tools
             tools._official_cache["tools"] = None
@@ -85,6 +85,36 @@ def _start_sign_in() -> dict:
     threading.Thread(target=run, daemon=True).start()
     ready.wait(10)
     return _status()
+
+
+def _my_schedule() -> dict:
+    """The signed-in attendee's official schedule (GetSchedule), resolved to sessions from the official catalog."""
+    from datetime import datetime, timezone
+
+    if not official_auth.is_signed_in():
+        return {"signed_in": False}
+    sched = catalog.get_schedule()
+
+    def ids(items):
+        out = []
+        for x in items:
+            sid = x if isinstance(x, str) else (x.get("sessionId") or x.get("session_id") or x.get("id")) if isinstance(x, dict) else None
+            if sid:
+                out.append(sid)
+        return out
+
+    def resolve(items):
+        rows = []
+        for sid in ids(items):
+            s = catalog.get_session(sid)
+            rows.append({k: s.get(k) for k in ("id", "code", "title", "start", "end", "venue", "venue_name", "room", "type")} if s
+                        else {"id": sid, "title": "(not in the loaded catalog)"})
+        return sorted(rows, key=lambda r: r.get("start") or "~")
+
+    return {"signed_in": True, "source": "official AWS Events API GetSchedule",
+            "fetched_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "reserved": resolve(sched["reserved"]), "favorites": resolve(sched["favorites"]),
+            "personal_time_count": len(sched["personalTime"])}
 
 
 def _chat(message: str, allow_write: bool) -> dict:
@@ -156,7 +186,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if not self._host_ok():
             return self._json(403, {"error": "forbidden host"})
-        if self.path in ("/", "/index.html") and _state.get("explorer_port"):
+        path_only = self.path.split("?", 1)[0]
+        if path_only in ("/", "/index.html") and _state.get("explorer_port"):
             html = (EXPLORER_DIST / "index.html").read_text(encoding="utf-8")
             html = html.replace("</head>", '<link rel="stylesheet" href="/copilot.css" />\n</head>', 1)
             html = html.replace("</body>", '<script src="/copilot.js" defer></script>\n</body>', 1)
@@ -170,6 +201,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, (ROOT / "index.html").read_bytes(), "text/html; charset=utf-8")
         if self.path == "/api/status":
             return self._json(200, _status())
+        if self.path == "/api/my-schedule":
+            try:
+                return self._json(200, _my_schedule())
+            except Exception as e:
+                return self._json(502, {"signed_in": official_auth.is_signed_in(), "error": getattr(e, "code", type(e).__name__)})
         if self.path == "/api/profile":
             return self._json(200, {**profile.load_profile(), "fields_help": profile.FIELDS})
         return self._json(404, {"error": "not found"})
@@ -258,6 +294,7 @@ def main() -> None:
         raise SystemExit(f"Port {a.port} is reserved for the OAuth callback; pick another.")
     if a.profile:
         os.environ["ATLAS_PROFILE"] = a.profile
+    _state["port"] = a.port
     if a.explorer_port in RESERVED | {8490, 8491, 8492}:
         raise SystemExit(f"Port {a.explorer_port} is reserved; pick another.")
     srv = ThreadingHTTPServer(("127.0.0.1", a.port), Handler)

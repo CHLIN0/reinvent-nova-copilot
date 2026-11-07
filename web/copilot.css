@@ -32,3 +32,6 @@
 .nc-body label{display:block;font-size:12px;color:#5f6b7a;margin:8px 0 2px}
 .nc-body input{width:100%;font:inherit;border:1px solid #e3e6ea;border-radius:6px;padding:5px 7px}
 .nc-note{font-size:12px;color:#5f6b7a;margin-top:8px}
+#nc-banner{position:fixed;left:50%;transform:translateX(-50%);bottom:20px;z-index:9998;padding:8px 14px;border-radius:999px;font:13px system-ui,-apple-system,"Noto Sans TC",sans-serif;box-shadow:0 4px 14px rgba(0,0,0,.18);max-width:calc(100vw - 220px)}
+#nc-banner.nc-ok{background:#e9f7ec;color:#1d5c12;border:1px solid #9bd3a4}
+#nc-banner.nc-warn{background:#fff4e5;color:#7a4100;border:1px solid #f5c27a}

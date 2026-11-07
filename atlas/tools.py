@@ -334,7 +334,16 @@ def _call(name: str, args: dict, be: Backend) -> Any:
         except ValueError as e:
             raise ToolError(str(e)) from e
     if name == "get_my_schedule":
-        return {"schedule": be.get_schedule()}
+        sched = be.get_schedule()
+        out: dict[str, Any] = {"source": sched.get("source", "official_api"), "personal_time": sched.get("personalTime", [])}
+        for key in ("reserved", "favorites"):
+            rows = []
+            for x in sched.get(key) or []:
+                sid = x if isinstance(x, str) else (x.get("sessionId") or x.get("id")) if isinstance(x, dict) else None
+                s = be.get_session(sid) if sid else None
+                rows.append(_brief(s, 0) if s else {"id": sid, "note": "not found in the loaded catalog"})
+            out[key] = sorted(rows, key=lambda r: r.get("start") or "~")
+        return {"schedule": out}
     if name == "add_favorites":
         ids = args.get("session_ids") or []
         if not ids:
