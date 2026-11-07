@@ -72,3 +72,28 @@ export function createPlanStore({
     remove: (item) => update(item, "remove"),
   });
 }
+
+/** Window event Nova Copilot (same page) dispatches after it changes the plan or the official schedule. */
+export const PLAN_CHANGED = "atlas:plan-changed";
+
+/**
+ * Keeps the page's plan in step with the server: re-reads the store on PLAN_CHANGED and when the
+ * tab becomes visible again, and drops replies that a newer read has overtaken. Returns `refresh`.
+ */
+export function watchPlan({ store, onPlan, onError, target = globalThis, doc = globalThis.document }) {
+  let latest = 0;
+  async function refresh() {
+    const request = ++latest;
+    try {
+      const items = await store.load();
+      if (request === latest) onPlan(items, store.official);
+    } catch (error) {
+      if (request === latest) onError(error);
+    }
+  }
+  target.addEventListener(PLAN_CHANGED, () => refresh());
+  target.addEventListener("visibilitychange", () => {
+    if (doc?.visibilityState === "visible") refresh();
+  });
+  return refresh;
+}

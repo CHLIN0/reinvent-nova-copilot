@@ -124,6 +124,47 @@ class PlanApiTests(unittest.TestCase):
         self.assertEqual(state["visits"], 1)
         self.assertEqual([x["session_id"] for x in state["plan"]["local"]], [self.ids[0]])
 
+    def test_reader_during_a_write_never_sees_invalid_json(self):
+        import threading
+
+        big = {"plan": {"version": 1, "local": [{"session_id": f"s{i:05d}", "added_at": "x" * 40} for i in range(3000)]}}
+        profile.save_state(big)
+        errors, done = [], threading.Event()
+
+        def writer():
+            for i in range(60):
+                big["visits"] = i
+                profile.save_state(big)
+            done.set()
+
+        t = threading.Thread(target=writer)
+        t.start()
+        reads = 0
+        while not done.is_set() or reads == 0:
+            try:  # unlocked on purpose: the file itself must never be half-written
+                state = profile.load_state()
+                self.assertEqual(len(state["plan"]["local"]), 3000)
+            except (ValueError, KeyError) as e:
+                errors.append(type(e).__name__)
+            reads += 1
+        t.join()
+        self.assertEqual(errors, [], f"{len(errors)} bad reads out of {reads}")
+        leftovers = [p.name for p in Path(self.tmp.name).iterdir() if p.name != "default.state.json"]
+        self.assertEqual(leftovers, [])
+        self.assertEqual(stat.S_IMODE(os.stat(Path(self.tmp.name) / "default.state.json").st_mode), 0o600)
+
+    def test_atlas_listener_and_stack_marks(self):
+        """Node tests: Atlas re-reads /api/plan on Copilot's event; stacked cards follow plan updates."""
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node is not installed")
+        ui = Path(__file__).resolve().parent.parent / "explorer" / "ui"
+        run = subprocess.run([node, "--test", "test-plan-store.mjs", "test-stack-plan-marks.mjs"],
+                             cwd=ui, capture_output=True, text=True, timeout=120)
+        self.assertEqual(run.returncode, 0, run.stdout[-3000:] + run.stderr[-2000:])
+        source = (ui / "src" / "plan-store.mjs").read_text(encoding="utf-8")
+        self.assertIn(f'export const PLAN_CHANGED = "{PLAN_CHANGED}";', source)  # the event Copilot dispatches
+
     def test_copilot_add_updates_atlas_without_reload(self):
         """Copilot's add posts to /api/plan and fires the event the built Atlas bundle listens for."""
         node = shutil.which("node")
@@ -137,8 +178,6 @@ class PlanApiTests(unittest.TestCase):
         self.assertEqual(report["post"], {"action": "add", "session_ids": ["syn-0001"]})
         self.assertEqual(report["events"], [PLAN_CHANGED])  # refresh event fired; no page reload
         self.assertIn("Added 1 session", report["message"])
-        bundle = DIST.read_text(encoding="utf-8")
-        self.assertRegex(bundle, r'addEventListener\("' + PLAN_CHANGED + r'",')
 
     def test_built_atlas_has_no_browser_storage_for_the_plan(self):
         bundle = DIST.read_text(encoding="utf-8")

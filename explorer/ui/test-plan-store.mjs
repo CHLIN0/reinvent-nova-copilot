@@ -97,3 +97,34 @@ test("server errors and malformed items surface as one plain message", async () 
   });
   await assert.rejects(malformed.load(), /我的安排/);
 });
+
+test("Copilot's event makes Atlas re-read the server plan and apply it", async () => {
+  const { watchPlan, PLAN_CHANGED } = await import("./src/plan-store.mjs");
+  assert.equal(PLAN_CHANGED, "atlas:plan-changed"); // the name web/copilot.js dispatches
+  const server = fakeServer([item("a", "reserved")]);
+  const store = createPlanStore({ fetch: server.fetch });
+  const target = new EventTarget();
+  const applied = [];
+  watchPlan({ store, target, doc: { visibilityState: "visible" }, onPlan: (items) => applied.push(items.map((p) => p.session_id)), onError: assert.fail });
+  await store.add(item("b")); // Copilot's POST, then its event
+  target.dispatchEvent(new Event(PLAN_CHANGED));
+  await new Promise((r) => setTimeout(r, 10));
+  assert.deepEqual(applied, [["a", "b"]]);
+  assert.deepEqual(server.calls.map((c) => c.init.method || "GET"), ["POST", "GET"]);
+  target.dispatchEvent(new Event("visibilitychange"));
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(applied.length, 2);
+});
+
+test("a slower, older plan read never overwrites a newer one", async () => {
+  const { watchPlan } = await import("./src/plan-store.mjs");
+  const replies = [];
+  const store = { official: null, load: () => new Promise((resolve) => replies.push(resolve)) };
+  const applied = [];
+  const refresh = watchPlan({ store, target: new EventTarget(), onPlan: (items) => applied.push(items), onError: assert.fail });
+  const first = refresh(), second = refresh();
+  replies[1](["new"]);
+  replies[0](["old"]);
+  await Promise.all([first, second]);
+  assert.deepEqual(applied, [["new"]]);
+});
