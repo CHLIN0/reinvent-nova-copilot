@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 
 from atlas.agent import Agent, AgentResult
@@ -49,9 +50,13 @@ def main() -> int:
     p.add_argument("--trace", action="store_true", help="Print the tool calls")
     p.add_argument("--live", action="store_true",
                    help="Sign in with your AWS Builder ID and use the official live catalog and your schedule")
+    p.add_argument("--profile", default=None,
+                   help="Attendee profile name (stored locally in local-private/profiles/). Default: 'default'")
     a = p.parse_args()
     from atlas.env import load_dotenv
     load_dotenv()
+    if a.profile:
+        os.environ["ATLAS_PROFILE"] = a.profile
     if a.live:
         from atlas import official_auth
         official_auth.sign_in()

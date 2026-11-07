@@ -20,9 +20,10 @@ This project started from a Nova Pro prompt that was tuned to give re:Invent vet
 | "Can I make it from A to B?" | `route_between` | Time-dependent multimodal routing (walk / badge shuttle / monorail / rideshare) |
 | "Is my day realistic?" | `check_itinerary` | Gap vs. travel time + buffer, per transition |
 | "Build me a day" | `plan_itinerary` | Exact DP over sessions sorted by start time, with must-attend sessions locked |
+| "Remember where I stay, how I move, what is fixed" | `get_profile`, `update_profile` | Local per-attendee profile (hotel, transport, step limit, mobility, diet, fixed commitments, special arrangements, interests). Plans start and end at the hotel; fixed commitments become `back_by` / `blocked` limits |
 | "Save these" | `add_favorites` (write, needs confirmation) | Official `AssociateFavorites`, then read back via `GetSchedule` |
 
-Rule enforced in the prompt and the tool layer: **the model may state a session time, room or code only when it came from a tool result.**
+Prompt approach: it keeps the Nova Pro prompt structure and re:Invent veteran attitude from the author's prompt-only advisor, but flips the old rule "never state specifics" into **"look specifics up with tools and cite them; never state one that no tool returned."**
 
 ## Architecture
 
@@ -58,8 +59,8 @@ pip install -r requirements.txt
 # Offline demo against the synthetic catalog (still needs Bedrock for Nova Pro)
 python3 chat.py --trace "I'm a mid-level developer into AI agents and security. On Tuesday I must attend the MCP with OAuth hands-on session. Plan the rest of my Tuesday with as little walking as possible, and tell me which transitions are tight."
 
-# Interactive
-python3 chat.py
+# Interactive, with a personal profile (stored locally in local-private/profiles/)
+python3 chat.py --profile alex
 
 # Live official catalog: sign in with your Builder ID in the browser when prompted
 python3 chat.py --live
@@ -100,7 +101,8 @@ Tests are offline: mocked HTTP for the official API (pagination, 401, 429), a mo
 
 - `data/fixture_sessions.json` is **synthetic**, written for this project. It is not the real catalog. The real catalog is access-controlled, so it is fetched live per user and never committed.
 - OAuth uses the official loopback flow (ports 8484–8488, `/callback`, PKCE). Access tokens live in process memory only.
-- Write actions are limited to favorites, require explicit confirmation, report per-item results, and are verified by reading the schedule back. The agent never reserves or cancels seats.
+- Attendee profiles are stored only on the local machine (`local-private/profiles/<name>.json`, git-ignored, mode 0600) and are never sent to AWS Events. They reach Nova Pro on Amazon Bedrock only as `get_profile` tool results in that conversation.
+- Write actions to AWS Events are limited to favorites, require explicit confirmation, report per-item results, and are verified by reading the schedule back. The agent never reserves or cancels seats.
 - Travel times are **estimates** from a venue graph (walk speed, shuttle headway, monorail, rideshare). They are not official wayfinding. Indoor routes are not modelled, because the API provides no floor plans.
 
 ## Limitations

@@ -66,7 +66,8 @@ class DispatcherTest(unittest.TestCase):
         cfg = tools.bedrock_tool_config()
         names = [t["toolSpec"]["name"] for t in cfg["tools"]]
         self.assertEqual(names, ["search_sessions", "get_session", "route_between", "check_itinerary",
-                                 "plan_itinerary", "get_my_schedule", "add_favorites"])
+                                 "plan_itinerary", "get_profile", "update_profile", "get_my_schedule",
+                                 "add_favorites"])
         for t in cfg["tools"]:
             self.assertEqual(t["toolSpec"]["inputSchema"]["json"]["type"], "object")
 

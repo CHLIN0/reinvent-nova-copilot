@@ -1,10 +1,8 @@
 # From re:Invent chatbot to re:Invent agent: giving Amazon Nova Pro the official Event Catalog API
 
-<!-- Builder Center article draft. Items marked [TBD] are filled in after integration. -->
-
 ## The problem: good advice, wrong plans
 
-A few weeks ago I competed in an AWS AI League prompt-engineering final. The task was to make Amazon Nova Pro the best possible re:Invent advisor, with nothing but a prompt. The prompt that won followed a few strict rules: give the direct answer first, address every condition the attendee states, and never invent dates, times, rooms or session codes.
+A few weeks ago I competed in an AWS AI League prompt-engineering final. The task was to make Amazon Nova Pro the best possible re:Invent advisor, with nothing but a prompt. Following the Amazon Nova prompting guidance, my prompt gave Nova Pro a clear veteran role and a few strict rules: give the direct answer first, address every condition the attendee states, and never invent dates, times, rooms or session codes.
 
 That last rule is the catch. A prompt-only chatbot gives good advice *because* it refuses to be specific. Ask it "Can I go from a 10:00 session at The Venetian to an 11:00 session at MGM Grand?" and the best it can honestly say is "check the app".
 
@@ -47,6 +45,34 @@ Transitions:
 No tight transitions were found. The sessions SYN-KEY01, SYN-AI202, SYN-AI306, and SYN-SEC110 were dropped due to time overlaps or insufficient time after the previous...
 
 Next, confirm this plan in the AWS Events app and adjust as needed.
+```
+
+## From "never invent" to "look it up"
+
+The prompt-only version had to avoid specifics because it could not check them. With tools, the default flips. I kept the Nova prompt structure (role, numbered MUST / DO NOT rules, explicit output format) and the veteran attitude (direct answer first, every condition handled, one tip that fits this person), and rewrote the specificity rule:
+
+| Prompt-only advisor | Copilot with the Events API |
+|---|---|
+| DO NOT state dates, times, rooms or session codes | Look them up with tools and state them, citing the session code |
+| "Check the AWS Events app" | Check it for the attendee: search, plan, route, read their schedule |
+| Feasibility is a guess | Feasibility comes from `route_between` / `plan_itinerary` |
+| Generic advice for everyone | Advice built from the attendee's own profile |
+| (unchanged) | Never state a specific that no tool returned. Say what the tools cannot know (indoor directions, crowds) |
+
+## A profile for every attendee
+
+A good veteran first asks: where are you staying, how much do you want to walk, what is already fixed? The copilot keeps that as a local profile per attendee (`--profile <name>`, stored only on the attendee's machine, file mode 0600, never sent to AWS Events; Nova Pro on Bedrock sees it only as a tool result). It holds the hotel, arrival and departure, preferred transport, daily step limit, mobility needs, diet, fixed commitments and special arrangements, role, level, interests and goals.
+
+When the attendee mentions these facts, Nova Pro saves them with `update_profile`. Every plan then starts and ends at their hotel. The hotel is mapped to the nearest venue node, and this is labelled as an approximation. Fixed commitments become hard limits: "a customer call at 17:30 in my room" becomes "back at the hotel by 17:15". A real run:
+
+```text
+$ python3 chat.py --profile demo-tue --trace "I'm staying at Park MGM, I can walk at most 8000 steps a day, I'm vegetarian, and I have a customer call on Tuesday at 17:30 that I must take from my hotel room. I'm a backend developer getting into AI agents and security. Remember this, and plan my Tuesday."
+
+1. update_profile({"updates": {"hotel": "Park MGM", "max_steps_per_day": 8000, "diet": "vegetarian", "fixed_commitments": ..., "role": "backend developer", "interests": ["AI agents", "security"]}})
+2. search_sessions({"topics": ["AI agents", "security"], "day": "Tue", ...})
+3. plan_itinerary({"back_by": "17:15", "prefer": "fewest_steps", ...})
+
+The session on security (SYN-SEC302) was dropped because it ends at 17:30, which is after your 17:15 limit to be back for your customer call.
 ```
 
 ## How it uses the API and MCP
@@ -93,7 +119,7 @@ Without a registered Builder ID it runs on a clearly labelled synthetic catalog.
 
 ## What I learned
 
-- Prompt engineering got Nova Pro to *behave* like a veteran. Tools got it to be *right*. The "never invent specifics" rule turns into "only state specifics from tools", and that changes how useful the answers can be.
+- Prompt engineering got Nova Pro to *behave* like a veteran. Tools got it to be *right*. "Never invent specifics" becomes "look specifics up, and never state one that no tool returned", and that changes how useful the answers can be.
 - At this scale (a handful of venues, a few thousand sessions), exact algorithms are cheap. There is no need to approximate.
 - The hardest parts were not the model. They were time zones, pagination, partial write results and being honest about what the data does not contain.
 

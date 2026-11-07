@@ -81,11 +81,28 @@ def plan_itinerary(
     prefer: str = "fastest",
     buffer_min: int = 10,
     max_sessions: int = 6,
+    use_profile: bool = True,
+    back_by: str | None = None,
+    blocked: list[dict] | None = None,
 ) -> dict:
     return _run(
         "plan_itinerary",
-        dict(candidate_ids=candidate_ids, query=query, must=must, day=day, prefer=prefer, buffer_min=buffer_min, max_sessions=max_sessions),
+        dict(candidate_ids=candidate_ids, query=query, must=must, day=day, prefer=prefer, buffer_min=buffer_min,
+             max_sessions=max_sessions, use_profile=use_profile, back_by=back_by, blocked=blocked),
     )
+
+
+@mcp.tool(description=_DESC["get_profile"], annotations=_READ)
+def get_profile() -> dict:
+    return _run("get_profile", {})
+
+
+@mcp.tool(
+    description=_DESC["update_profile"],
+    annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False),
+)
+def update_profile(updates: dict) -> dict:
+    return _run("update_profile", {"updates": updates})
 
 
 @mcp.tool(description=_DESC["get_my_schedule"], annotations=_READ)
