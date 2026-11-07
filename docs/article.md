@@ -24,7 +24,30 @@ You ask in plain language, for example: *"I'm into agents and security, I have t
 
 The same tools are exposed through an MCP server, so they can sit next to the official `https://api.awsevents.com/mcp` in any MCP client.
 
-[TBD: screenshot / terminal trace of one full question]
+A real run (Nova Pro on Amazon Bedrock, synthetic demo catalog), with the tool trace:
+
+```text
+$ python3 chat.py --trace "I'm a mid-level developer into AI agents and security. On Tuesday I must attend the MCP with OAuth hands-on session. Plan the rest of my Tuesday with as little walking as possible, and tell me which transitions are tight."
+
+--- trace: 4 tool call(s), 4 round(s), stop=end_turn
+1. search_sessions({"query": "MCP with OAuth hands-on", "limit": 1, "day": "Tue"}) -> ok: {"count": 1, "sessions": [{"id": "syn-0010", "code": "SYN-AI410", "title": "R...
+2. search_sessions({"venue": "mgm_grand", "topics": ["AI agents", "security"], "limit": 10, "day": "Tue"}) -> ok: {"count": 1, "sessions": [{"id": "syn-0010", "code": ...
+3. search_sessions({"topics": ["AI agents", "security"], "limit": 10, "day": "Tue"}) -> ok: {"count": 7, "sessions": [{"id": "syn-k001", "code": "SYN-KEY01", "title": ...
+4. plan_itinerary({"prefer": "fewest_steps", "must": ["syn-0010"], "candidate_ids": ["syn-k001", "syn-0002", "syn-0026", "syn-0006", "syn-0030", "syn-0022"], "day": "T...
+Here's your planned Tuesday with minimal walking:
+
+- 09:00 - 10:00 SYN-SEC406, Incident response game day, caesars_forum
+- 12:00 - 13:00 SYN-AI410, Remote MCP servers with OAuth: a hands-on build, mgm_grand (must-attend)
+- 16:30 - 17:30 SYN-SEC302, Detecting credential misuse in minutes, venetian
+
+Transitions:
+- From SYN-SEC406 to SYN-AI410: 27.6 minutes by rideshare with 82.4 minutes of slack.
+- From SYN-AI410 to SYN-SEC302: 29.7 minutes by rideshare with 170.3 minutes of slack.
+
+No tight transitions were found. The sessions SYN-KEY01, SYN-AI202, SYN-AI306, and SYN-SEC110 were dropped due to time overlaps or insufficient time after the previous...
+
+Next, confirm this plan in the AWS Events app and adjust as needed.
+```
 
 ## How it uses the API and MCP
 
