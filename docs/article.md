@@ -112,7 +112,7 @@ All travel times are labelled estimates. The API has no floor plans, so indoor r
 
 ## Try it
 
-Repository: [TBD: GitHub URL]
+Repository: https://github.com/CHLIN0/reinvent-nova-copilot
 
 ```sh
 pip install -r requirements.txt
