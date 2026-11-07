@@ -9,6 +9,7 @@
   const FIELDS = [["hotel", "Hotel / 飯店"], ["max_steps_per_day", "Max steps per day / 每日步數上限"], ["transport", "Transport (walk, shuttle, monorail, rideshare)"], ["interests", "Interests (comma separated)"], ["role", "Role"], ["diet", "Diet"], ["mobility", "Mobility"], ["fixed_commitments", "Fixed commitments (comma separated)"], ["special_arrangements", "Special arrangements (comma separated)"]];
   const LISTS = new Set(["transport", "interests", "fixed_commitments", "special_arrangements"]);
   let lastPlan = null;
+  let signedIn = false;
 
   const fab = el("button", null, "✦ Nova Copilot"); fab.id = "nc-fab"; fab.type = "button";
   const panel = el("aside"); panel.id = "nc-panel"; panel.hidden = true;
@@ -40,7 +41,7 @@
 
   panel.append(head, tabs, bodies.chat, bodies.day, bodies.profile, form, opt);
   document.body.append(fab, panel);
-  fab.addEventListener("click", () => { panel.hidden = false; fab.hidden = true; show("chat"); ta.focus(); if (banner.className === "nc-ok") briefing(); });
+  fab.addEventListener("click", () => { panel.hidden = false; fab.hidden = true; show("chat"); ta.focus(); if (signedIn) briefing(); });
   document.querySelector(".copilot-link")?.addEventListener("click", e => { e.preventDefault(); fab.click(); });
   close.addEventListener("click", () => { panel.hidden = true; fab.hidden = false; });
 
@@ -154,15 +155,37 @@
     for (const r of rows) { const li = el("li"); li.append(el("div", "nc-t", `${(r.start || "").slice(5, 10)} ${hhmm(r.start)}–${hhmm(r.end)}  ${r.code || ""}`), el("div", null, r.title || r.id), el("div", "nc-sub", [r.venue_name || r.venue, r.room].filter(Boolean).join(" · "))); ul.append(li); }
     box.append(rows.length ? ul : el("div", "nc-empty", "None")); return box;
   }
-  async function loadOfficial() {
-    let s;
-    try { s = await api("/api/my-schedule"); } catch (e) { banner.textContent = "AWS Events: could not read your official schedule (" + e.message + ")"; banner.className = "nc-warn"; return; }
-    if (!s.signed_in) { banner.textContent = "Not signed in to AWS Events: Copilot uses demo data. Use “登入 AWS Events” above."; banner.className = "nc-warn"; return; }
-    banner.textContent = `✓ Signed in to AWS Events (official API) · ${s.reserved.length} reserved · ${s.favorites.length} favorites · read ${new Date(s.fetched_at).toLocaleTimeString()}`;
-    banner.className = "nc-ok";
+  async function loadOfficial(statusOnly = false) {
+    let status, s, scheduleError;
+    try {
+      status = await api("/api/status");
+      if (status.signed_in && !statusOnly) {
+        try { s = await api("/api/my-schedule"); } catch (e) { scheduleError = e.message; }
+        status = await api("/api/status"); // Reading the schedule may have refreshed the token.
+      }
+    } catch (e) { banner.textContent = "AWS Events: could not check sign-in status (" + e.message + ")"; banner.className = "nc-warn"; return; }
+    signedIn = status.signed_in;
+    const soon = status.signed_in && status.seconds_left != null && status.seconds_left <= 300;
+    banner.textContent = status.signed_in
+      ? `✓ AWS Events: signed in${status.seconds_left == null ? "" : ` · ${Math.ceil(status.seconds_left / 60)} min left`}${soon ? " · sign in again soon" : ""}${status.refreshable ? " · automatic refresh available" : ""}`
+      : status.reason === "restarted" ? "The app restarted, please sign in again."
+      : "AWS Events: please sign in again.";
+    banner.className = status.signed_in && !soon ? "nc-ok" : "nc-warn";
+    if (!status.signed_in || soon) {
+      const signIn = el("button", "nc-btn2", "Sign in with AWS Builder ID"); signIn.type = "button";
+      signIn.disabled = !!status.sign_in?.running;
+      signIn.addEventListener("click", async () => {
+        signIn.disabled = true;
+        try { const r = await api("/api/auth/start", {}); location.assign(r.authorization_url); }
+        catch (e) { signIn.disabled = false; signIn.textContent = "Sign-in failed: retry"; }
+      });
+      banner.append(document.createTextNode(" "), signIn);
+    }
+    if (scheduleError) { banner.append(document.createTextNode(" · Could not read your official schedule (" + scheduleError + ")")); banner.className = "nc-warn"; }
+    if (!status.signed_in || !s?.signed_in) return;
     if (!lastPlan) { const box = bodies.day; box.replaceChildren(el("div", "nc-note", "Your official schedule (AWS Events GetSchedule). Ask Copilot to plan around it."), scheduleList("Reserved", s.reserved), scheduleList("Favorites", s.favorites)); }
     planChanged();  // official reservations and favorites are part of “我的安排”
   }
   loadOfficial();
-  setInterval(() => { if (banner.className !== "nc-ok") loadOfficial(); }, 5000);
+  setInterval(() => loadOfficial(true), 60000);
 })();

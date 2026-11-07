@@ -147,6 +147,7 @@ class OfficialAuth:
             return {"connected": connected, "auth_status": phase,
                     "pending_sign_in": bool(self._pending), "error": self._error,
                     "expires_at": self._tokens["expires_at"] if connected else None,
+                    "refreshable": bool(connected and self._tokens["refresh_token"]),
                     "memory_only": True}
 
     def start(self):
