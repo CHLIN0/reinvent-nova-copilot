@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import tempfile
 import threading
 from collections.abc import Callable
 from pathlib import Path
@@ -112,14 +113,31 @@ def load_state(name: str | None = None) -> dict[str, Any]:
 
 
 def save_state(state: dict[str, Any], name: str | None = None) -> None:
+    """Atomic: write a 0600 temp file in the same directory, then rename it over the state file.
+
+    A reader (here or in another process) sees either the old or the new file, never a half-written one.
+    """
     PROFILE_DIR.mkdir(parents=True, exist_ok=True)
     p = PROFILE_DIR / f"{_safe_name(name)}.state.json"
-    fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        json.dump(state, f, ensure_ascii=False, indent=2)
+    fd, tmp = tempfile.mkstemp(prefix=f".{p.name}.", suffix=".tmp", dir=PROFILE_DIR)  # mkstemp creates 0600
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(state, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, p)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
 
 
 _state_lock = threading.Lock()
+
+
+def read_state(name: str | None = None) -> dict[str, Any]:
+    """load_state under the same lock as update_state, for readers in this process."""
+    with _state_lock:
+        return load_state(name)
 
 
 def update_state(change: Callable[[dict[str, Any]], Any], name: str | None = None) -> Any:

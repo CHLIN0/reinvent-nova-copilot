@@ -249,7 +249,7 @@ def _plan() -> dict:
             official = {"status": "error", "error": getattr(e, "code", type(e).__name__)}
     items, seen = [], set()
     for source, rows in (("reserved", [(i, "") for i in reserved]), ("favorite", [(i, "") for i in favorites]),
-                         ("local", [(x["session_id"], str(x.get("added_at") or "")) for x in _local_picks(profile.load_state())])):
+                         ("local", [(x["session_id"], str(x.get("added_at") or "")) for x in _local_picks(profile.read_state())])):
         for sid, added_at in rows:
             if sid not in seen:
                 seen.add(sid)

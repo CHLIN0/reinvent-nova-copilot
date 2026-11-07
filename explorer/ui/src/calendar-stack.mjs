@@ -249,6 +249,7 @@ export function createStackCalendar({ container, onSelect = () => {} }) {
     dialog = null,
     trigger = null,
     destroyed = false;
+  const cardMembers = new WeakMap();
   const triggers = new Map(),
     groups = new Map();
   const root = node("div", "atlas-stack");
@@ -345,6 +346,34 @@ export function createStackCalendar({ container, onSelect = () => {} }) {
     else dialog.setAttribute("open", "");
     close.focus({ preventScroll: true });
   }
+  // Plan marks on a card's previews plus a per-group count (every planned member, not only the two
+  // previews). Used when cards are built and when only the plan changes behind an open comparison.
+  function paintPlan(button) {
+    const members = cardMembers.get(button) || [];
+    const planned = new Map(plan.map((item) => [item.placement, item]));
+    const previews = [...button.querySelectorAll(".atlas-stack-preview-title")];
+    previews.forEach((preview, index) => {
+      const record = members[index];
+      const item = planned.get(record.placement);
+      preview.textContent = `${planMark(item)}${record.session?.code ? record.session.code + " · " : ""}${record.session?.title || "未命名議程"}`;
+      preview.classList.remove("plan-reserved", "plan-favorite", "plan-local");
+      if (item) preview.classList.add("plan-" + item.source);
+    });
+    const inPlan = members
+      .map((record) => planned.get(record.placement))
+      .filter(Boolean);
+    let note = button.querySelector(".atlas-stack-local-plan");
+    if (!inPlan.length || !previews.length) return note?.remove();
+    if (!note) {
+      note = node("span", "atlas-stack-local-plan");
+      previews.at(-1).after(note);
+    }
+    note.textContent = ["reserved", "favorite", "local"]
+      .map((source) => [source, inPlan.filter((i) => i.source === source).length])
+      .filter(([, n]) => n)
+      .map(([source, n]) => `${planMark({ source })}${planLabel({ source })} ${n}`)
+      .join(" · ");
+  }
   function stack(members, day, hour, ongoing = false, untimed = false) {
     const single = members.length === 1;
     const button = node(
@@ -380,33 +409,10 @@ export function createStackCalendar({ container, onSelect = () => {} }) {
       button.append(
         node("strong", "atlas-stack-count", `${members.length} 場`),
       );
-      const planned = new Map(plan.map((item) => [item.placement, item]));
-      for (const record of members.slice(0, 2)) {
-        const item = planned.get(record.placement);
-        const preview = node(
-          "span",
-          "atlas-stack-preview-title",
-          `${planMark(item)}${record.session?.code ? record.session.code + " · " : ""}${record.session?.title || "未命名議程"}`,
-        );
-        if (item) preview.classList.add("plan-" + item.source);
-        button.append(preview);
-      }
-      // Every planned session in the group is counted, including ones beyond the two previews.
-      const inPlan = members
-        .map((record) => planned.get(record.placement))
-        .filter(Boolean);
-      if (inPlan.length)
-        button.append(
-          node(
-            "span",
-            "atlas-stack-local-plan",
-            ["reserved", "favorite", "local"]
-              .map((source) => [source, inPlan.filter((i) => i.source === source).length])
-              .filter(([, n]) => n)
-              .map(([source, n]) => `${planMark({ source })}${planLabel({ source })} ${n}`)
-              .join(" · "),
-          ),
-        );
+      for (const record of members.slice(0, 2))
+        button.append(node("span", "atlas-stack-preview-title"));
+      cardMembers.set(button, members);
+      paintPlan(button);
       if (!untimed)
         button.append(
           node("span", "atlas-stack-preview-time", timeRange(members[0])),
@@ -556,6 +562,8 @@ export function createStackCalendar({ container, onSelect = () => {} }) {
             card.append(node("p", "atlas-stack-local-plan", planLabel(item)));
           else note?.remove();
         }
+        // The cards behind the dialog follow the same plan, so they are current once it closes.
+        for (const button of groups.values()) if (cardMembers.has(button)) paintPlan(button);
         return;
       }
       const oldScroll = root.querySelector(".atlas-stack-scroll");

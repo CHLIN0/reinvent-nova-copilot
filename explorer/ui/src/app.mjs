@@ -19,7 +19,7 @@ import {
   DISCOVERY_DIMENSIONS,
 } from "./discovery.mjs";
 import { createScene, VENUES } from "./scene.mjs";
-import { createPlanStore } from "./plan-store.mjs";
+import { createPlanStore, watchPlan } from "./plan-store.mjs";
 import {
   createOfficialConnection,
   connectionCopy,
@@ -94,7 +94,6 @@ let records = [],
   weekScroll = null,
   dayScroll = null;
 let planUnavailable = true,
-  planRefresh = 0,
   planError = "";
 const notify = (message) => {
   $("notice").textContent = message;
@@ -666,17 +665,17 @@ function refreshPlanButton() {
     b.disabled = planToggleDisabled(r);
   }
 }
-async function refreshPlan() {
-  const request = ++planRefresh;
-  try {
-    const items = canonicalPlan(await planStore.load());
-    if (request !== planRefresh) return;
+// Re-reads /api/plan on Copilot's update event and when the tab is shown again (see watchPlan).
+const refreshPlan = watchPlan({
+  store: planStore,
+  onPlan(loaded, official) {
+    const items = canonicalPlan(loaded);
     const changed =
       planUnavailable || JSON.stringify(items) !== JSON.stringify(state.plan);
     state.plan = items;
     planUnavailable = false;
     const officialError =
-      planStore.official?.status === "error"
+      official?.status === "error"
         ? "官方行程暫時無法讀取；「我的安排」目前只列出本機挑選。"
         : "";
     if (planError && $("notice").textContent === planError) notify("");
@@ -684,18 +683,13 @@ async function refreshPlan() {
     if (officialError) notify(officialError);
     if (changed) renderCalendar();
     refreshPlanButton();
-  } catch (error) {
-    if (request !== planRefresh) return;
+  },
+  onError(error) {
     planUnavailable = true;
     planError = error.message || "暫時無法讀取「我的安排」；請稍後再試。";
     notify(planError);
     refreshPlanButton();
-  }
-}
-// Nova Copilot (same page) dispatches this after it changes the plan or the official schedule.
-addEventListener("atlas:plan-changed", () => refreshPlan());
-addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible") refreshPlan();
+  },
 });
 function spotlight(id, focus = false) {
   state.spotlight = id;
