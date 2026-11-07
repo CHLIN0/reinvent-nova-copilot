@@ -188,6 +188,7 @@ export function makePlanItem(r) {
   return {
     placement: r.placement,
     key: r.key,
+    session_id: String(r.session.session_id || ""),
     code: String(r.session.code || ""),
     title: String(r.session.title || ""),
     start: String(r.session.start_local || ""),
@@ -196,6 +197,15 @@ export function makePlanItem(r) {
     addedAt: new Date().toISOString(),
   };
 }
+const PLAN_LABELS = {
+  reserved: "官方已預約",
+  favorite: "官方收藏",
+  local: "已在本機安排",
+};
+const PLAN_MARKS = { reserved: "✓ ", favorite: "★ ", local: "● " };
+/** How a plan item is marked: official reservation, official favorite, or a local pick. */
+export const planLabel = (item) => PLAN_LABELS[item?.source] || PLAN_LABELS.local;
+export const planMark = (item) => (item ? PLAN_MARKS[item.source] || PLAN_MARKS.local : "");
 export function loadPlan(storage) {
   try {
     const raw = storage.getItem("reinvent.local-plan.v1");

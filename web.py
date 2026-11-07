@@ -192,6 +192,103 @@ def _chat(message: str, allow_write: bool, feature: str = "chat") -> dict:
     }
 
 
+# "My plan" (我的安排) lives on the server, never in browser storage: official reserved and favorite
+# sessions read live from GetSchedule, plus local picks saved in the profile state file (key "plan").
+MAX_LOCAL_PLAN = 500
+MAX_PLAN_CHANGE = 50
+_ATLAS_SOURCE = {"official_api": "aws_events_api"}  # Event Atlas's name for the official catalog
+
+
+def _schedule_ids(items) -> list[str]:
+    out = []
+    for x in items:
+        sid = x if isinstance(x, str) else (x.get("sessionId") or x.get("session_id") or x.get("id")) if isinstance(x, dict) else None
+        if isinstance(sid, str) and sid and sid not in out:
+            out.append(sid)
+    return out
+
+
+def _compact(value) -> str:
+    """JSON text identical to the browser's JSON.stringify, so placements match Event Atlas's records."""
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+def _plan_item(sid: str, source: str, added_at: str, sessions: dict) -> dict:
+    """One plan entry in Event Atlas's plan-item format, plus session_id and source (reserved | favorite | local)."""
+    s = sessions.get(sid)
+    if not s:
+        return {"placement": _compact(["aws_events_api", sid, None, None]), "key": _compact(["aws_events_api", sid]),
+                "session_id": sid, "code": sid, "title": "(not in the loaded catalog)", "start": "", "end": "",
+                "location": "", "addedAt": added_at, "source": source}
+    src = _ATLAS_SOURCE.get(s.get("source"), str(s.get("source") or ""))
+    start, end = s.get("start") or None, s.get("end") or None
+    return {"placement": _compact([src, sid, start, end]), "key": _compact([src, sid]), "session_id": sid,
+            "code": str(s.get("code") or ""), "title": str(s.get("title") or ""), "start": start or "", "end": end or "",
+            "location": str(s.get("room") or s.get("venue_name") or ""), "addedAt": added_at, "source": source}
+
+
+def _local_picks(state: dict) -> list[dict]:
+    plan = state.get("plan") if isinstance(state.get("plan"), dict) else {}
+    return [x for x in plan.get("local") or [] if isinstance(x, dict) and isinstance(x.get("session_id"), str)]
+
+
+def _plan() -> dict:
+    from datetime import datetime, timezone
+
+    sessions = {s["id"]: s for s in catalog.load_sessions()}
+    reserved, favorites, official = [], [], {"status": "signed_out"}
+    if official_auth.is_signed_in():
+        try:
+            sched = catalog.get_schedule()
+            reserved, favorites = _schedule_ids(sched["reserved"]), _schedule_ids(sched["favorites"])
+            official = {"status": "live", "read_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+        except Exception as e:  # local picks still show; report the code only
+            official = {"status": "error", "error": getattr(e, "code", type(e).__name__)}
+    items, seen = [], set()
+    for source, rows in (("reserved", [(i, "") for i in reserved]), ("favorite", [(i, "") for i in favorites]),
+                         ("local", [(x["session_id"], str(x.get("added_at") or "")) for x in _local_picks(profile.load_state())])):
+        for sid, added_at in rows:
+            if sid not in seen:
+                seen.add(sid)
+                items.append(_plan_item(sid, source, added_at, sessions))
+    items.sort(key=lambda r: r["start"] or "~")
+    counts = {k: sum(1 for r in items if r["source"] == k) for k in ("reserved", "favorite", "local")}
+    return {"version": 1, "items": items, "counts": counts, "official": official}
+
+
+def _change_plan(action, session_ids) -> dict:
+    """Add or remove local picks by session id. Official reservations and favorites change only in AWS Events."""
+    from datetime import datetime, timezone
+
+    if action not in ("add", "remove"):
+        raise ValueError("action must be 'add' or 'remove'")
+    ids = list(dict.fromkeys(i for i in session_ids if isinstance(i, str) and 0 < len(i) <= 128))
+    if not 1 <= len(ids) <= MAX_PLAN_CHANGE:
+        raise ValueError(f"give 1 to {MAX_PLAN_CHANGE} session ids")
+    if action == "add":
+        known = {s["id"] for s in catalog.load_sessions()}
+        unknown = [i for i in ids if i not in known]
+        if unknown:
+            raise ValueError(f"session id(s) not in the loaded catalog: {unknown}")
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+    def change(state: dict) -> int:
+        local = _local_picks(state)
+        before = len(local)
+        if action == "add":
+            have = {x["session_id"] for x in local}
+            local += [{"session_id": i, "added_at": now} for i in ids if i not in have]
+            if len(local) > MAX_LOCAL_PLAN:
+                raise ValueError(f"the local plan holds at most {MAX_LOCAL_PLAN} sessions")
+        else:
+            local = [x for x in local if x["session_id"] not in ids]
+        state["plan"] = {"version": 1, "local": local}
+        return abs(len(local) - before)
+
+    changed = profile.update_state(change)
+    return {**_plan(), "changed": changed}
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "NovaCopilot"
 
@@ -269,6 +366,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(502, {"signed_in": official_auth.is_signed_in(), "error": getattr(e, "code", type(e).__name__)})
         if self.path == "/api/profile":
             return self._json(200, {**profile.load_profile(), "fields_help": profile.FIELDS})
+        if path_only == "/api/plan":
+            try:
+                return self._json(200, _plan())
+            except Exception as e:
+                return self._json(500, {"error": getattr(e, "code", type(e).__name__)})
         return self._json(404, {"error": "not found"})
 
     def do_POST(self):
@@ -306,6 +408,9 @@ class Handler(BaseHTTPRequestHandler):
                 if not st["sign_in"]["url"]:
                     return self._json(503, {"error": "callback_unavailable"})
                 return self._json(200, {"authorization_url": st["sign_in"]["url"]})
+            if self.path == "/api/plan":
+                ids = body.get("session_ids") if isinstance(body.get("session_ids"), list) else [body.get("session_id")]
+                return self._json(200, _change_plan(body.get("action"), ids))
             if self.path == "/api/profile":
                 updates = body.get("updates") or {}
                 return self._json(200, profile.update_profile(updates))

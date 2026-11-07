@@ -1,4 +1,4 @@
-import { ZONE, dayLabel } from "./model.mjs";
+import { ZONE, dayLabel, planLabel } from "./model.mjs";
 import { sessionFacets } from "./session-facets.mjs";
 
 const MINUTE = 60_000;
@@ -284,7 +284,7 @@ export function createStackCalendar({ container, onSelect = () => {} }) {
     header.append(headingNode, close);
     const intro = node("p", "atlas-stack-dialog-intro", explanation);
     const grid = node("div", "atlas-stack-comparison");
-    const planned = new Set(plan.map((item) => item.placement));
+    const planned = new Map(plan.map((item) => [item.placement, item]));
     for (const original of ordered(members)) {
       const card = node("article", "atlas-stack-comparison-card");
       card.dataset.placement = original.placement;
@@ -300,7 +300,13 @@ export function createStackCalendar({ container, onSelect = () => {} }) {
         node("p", "atlas-stack-venue", location(original)),
       );
       if (planned.has(original.placement))
-        card.append(node("p", "atlas-stack-local-plan", "已在本機安排"));
+        card.append(
+          node(
+            "p",
+            "atlas-stack-local-plan",
+            planLabel(planned.get(original.placement)),
+          ),
+        );
       const provenance = comparisonProvenance(original, taxonomy);
       sourceGroup(card, "官方原始標籤", provenance.official, "official");
       sourceGroup(card, "系統推導主題", provenance.system, "system");
@@ -521,14 +527,16 @@ export function createStackCalendar({ container, onSelect = () => {} }) {
         selection === nextSelection
       ) {
         plan = next.plan || [];
-        const planned = new Set(plan.map((item) => item.placement));
+        const planned = new Map(plan.map((item) => [item.placement, item]));
         for (const card of dialog.querySelectorAll(
           ".atlas-stack-comparison-card",
         )) {
           const note = card.querySelector(".atlas-stack-local-plan");
-          if (planned.has(card.dataset.placement) && !note)
-            card.append(node("p", "atlas-stack-local-plan", "已在本機安排"));
-          else if (!planned.has(card.dataset.placement)) note?.remove();
+          const item = planned.get(card.dataset.placement);
+          if (item && note) note.textContent = planLabel(item);
+          else if (item)
+            card.append(node("p", "atlas-stack-local-plan", planLabel(item)));
+          else note?.remove();
         }
         return;
       }
