@@ -88,7 +88,7 @@ The session on security (SYN-SEC302) was dropped because it ends at 17:30, which
 | `GetSession` | Full details when the agent cites a session. |
 | `GetSchedule` | Grounds the plan in what the attendee already has. Used again after every write to verify. |
 | `AssociateFavorites` | The only write the agent may perform, gated by explicit user confirmation. |
-| Remote MCP server | The project's own MCP server is registered next to the official `https://api.awsevents.com/mcp` in the same client. `official_mcp.py` is a small client for the official server, reusing the same sign-in token. |
+| Remote MCP server | When the attendee is signed in, the agent connects to the official `https://api.awsevents.com/mcp` with the same token, lists its tools, and gives Nova Pro the read-only ones (prefixed `aws_events__`). Write-capable official tools are filtered out, so the only write path stays our confirmed, read-back `add_favorites`. Our own MCP server can also be registered next to the official one in any MCP client. |
 | Quotas and errors | 429 honours `Retry-After`. 401/403 stop and ask to sign in again or check registration. Writes are reconciled by reading back, since there is no idempotency key. |
 
 ## Design decisions

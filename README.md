@@ -3,6 +3,8 @@
 An Amazon Nova Pro agent that **acts** on the official re:Invent 2026 Event Catalog API instead of only chatting about re:Invent.
 Ask it a question in plain language. It looks up real sessions, checks whether you can actually get from one venue to the next in time, builds a feasible day, and (only after you confirm) saves your picks as favorites in your official re:Invent schedule.
 
+When you are signed in, the agent also connects to the **official AWS Events MCP server** and gives Nova Pro its read-only tools alongside its own.
+
 Every capability is also exposed as an **MCP server**, so you can plug the same tools into any MCP client next to the official `https://api.awsevents.com/mcp` server.
 
 Built for the AWS re:Invent Event Catalog API Hackathon (2026).
