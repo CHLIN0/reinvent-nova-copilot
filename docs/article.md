@@ -24,6 +24,8 @@ You ask in plain language, for example: *"I'm into agents and security, I have t
 4. **Builds a feasible day**: `plan_itinerary` locks your must-attend sessions and picks the best set that you can physically reach, explaining what it dropped and why.
 5. **Saves your picks only after you confirm**: `add_favorites` (`AssociateFavorites`) reports per-item results, then reads your schedule back to verify.
 
+Everything lives in one local web app. The main view is Event Atlas, my agenda explorer on the same official API, with filters, five-day and single-day calendars and a 3D campus map. The Nova Copilot panel opens on top of it. One Builder ID sign-in serves both views, and a copilot plan can be added to the Atlas calendar in one click.
+
 The same tools are exposed through an MCP server, so they can sit next to the official `https://api.awsevents.com/mcp` in any MCP client.
 
 A real run (Nova Pro on Amazon Bedrock, synthetic demo catalog), with the tool trace:
@@ -116,6 +118,8 @@ Repository: https://github.com/CHLIN0/reinvent-nova-copilot
 
 ```sh
 pip install -r requirements.txt
+python3 web.py          # open http://127.0.0.1:8500/
+# or the CLI:
 python3 chat.py --trace "Plan my Tuesday around agents and security with minimal walking"
 ```
 
