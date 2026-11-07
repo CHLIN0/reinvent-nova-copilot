@@ -15,6 +15,9 @@ Answers dump 20+ dropped session codes inline, pick `max_sessions` arbitrarily, 
 ## Must not
 - Change tool contracts beyond adding `free_windows`; add tools; touch `explorer/` or `web/copilot.js` (T3 owns them).
 
+## Added by the host after T10 merged (2026-11-07)
+- Language rule (handed over from T10, see `docs/briefs/T10-host-handoff.md`): answer in the profile's `language` (default follows the attendee's question language); keep session titles and codes in the original; when quoting a translated abstract, mark it as an unofficial translation.
+
 ## Repository facts (read these first) (read these first)
 - Repo: re:Invent Nova Copilot, Python 3.12 stdlib + boto3 + mcp. Public on GitHub (CHLIN0/reinvent-nova-copilot), MIT.
 - Layout: `atlas/` (agent.py Bedrock Converse loop; tools.py tool specs + dispatcher; catalog.py official Events API + synthetic fixture; official_auth.py OAuth PKCE loopback; official_mcp.py; routing.py; planner.py; profile.py local per-attendee profile + state; prompts.py; env.py), `web.py` (local web app on 127.0.0.1:8500 serving Event Atlas from `explorer/` plus the Copilot panel `web/copilot.js`), `explorer/` (Event Atlas: server.py, ui/src/*.mjs, ui/dist built), `tests/` (unittest, offline), `docs/plans/2026-11-07-ux-overhaul.md` (the roadmap; your task's acceptance and must-nots are there and repeated below).
