@@ -22,11 +22,10 @@ export function freeLabel(minutes) {
 }
 
 const ms = (value) => Date.parse(value);
-const MIN_GAP = 15;
 
 /**
  * One day of the plan, in time order. Gaps are the free time between consecutive reserved sessions
- * (at least 15 min); favorites and local picks that start inside a gap are listed inside it.
+ * (any positive length); favorites and local picks that start inside a gap are listed inside it.
  * Rows: {kind: "session", item} | {kind: "gap", start, end, minutes, label, items}.
  */
 export function dayAgenda(items, day) {
@@ -43,7 +42,7 @@ export function dayAgenda(items, day) {
   const gaps = [];
   let busyUntil = null;
   for (const r of reserved) {
-    if (busyUntil !== null && ms(r.start) - busyUntil >= MIN_GAP * 60000)
+    if (busyUntil !== null && ms(r.start) > busyUntil)
       gaps.push({ start: busyUntil, end: ms(r.start) });
     busyUntil = Math.max(busyUntil ?? 0, ms(r.end));
   }
@@ -88,4 +87,65 @@ export function dayCounts(items, days = DAYS) {
       items.filter((p) => p.start && localDate(p.start) === d).length,
     ]),
   );
+}
+
+/**
+ * Which tab to show, from both proofs of sign-in: /api/auth/status (`auth`) and /api/plan's
+ * official.status == "live" (`plan`). Either one arriving can decide or change the tab, so a failed
+ * auth check followed by a live plan still opens My re:Invent. `onChange({tab, previous, signedIn})`
+ * runs on every update once anything is known.
+ */
+export function createHomeChoice({ requested = null, onChange }) {
+  let auth = null,
+    planLive = false,
+    chosen = false,
+    tab = null;
+  function decide() {
+    if (auth === null && !planLive) return;
+    const signedIn = auth === true || planLive;
+    const previous = tab;
+    if (tab === null) tab = chooseTab({ signedIn, requested });
+    else if (!signedIn && tab === "mine") tab = "explore";
+    else if (signedIn && tab === "explore" && !chosen && !requested) tab = "mine";
+    onChange({ tab, previous, signedIn });
+  }
+  return {
+    auth(connected) {
+      auth = !!connected;
+      decide();
+    },
+    plan(status) {
+      planLive = status === "live";
+      decide();
+    },
+    choose(next) {
+      chosen = true;
+      tab = next;
+    },
+    get tab() {
+      return tab;
+    },
+  };
+}
+
+/** FullCalendar view name and date for Atlas's view mode and day. */
+export function calendarTarget(view, day, days = DAYS) {
+  return view === "day" ? ["timeGridDay", day] : ["fiveDays", days[0]];
+}
+
+/**
+ * Every calendar date/view move goes through `go`, so the calendar always shows `state.day`,
+ * whichever tab changed it. Calls `calendar.changeView` only when the target changes.
+ */
+export function createCalendarSync(calendar, view, day) {
+  let current = calendarTarget(view, day).join(" ");
+  return {
+    go(nextView, nextDay) {
+      const target = calendarTarget(nextView, nextDay);
+      if (target.join(" ") === current) return false;
+      current = target.join(" ");
+      calendar.changeView(...target);
+      return true;
+    },
+  };
 }

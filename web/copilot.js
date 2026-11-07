@@ -184,23 +184,13 @@
     } catch (e) { banner.textContent = "AWS Events: could not check sign-in status (" + e.message + ")"; banner.className = "nc-warn"; return; }
     signedIn = status.signed_in; demo.hidden = signedIn;
     const soon = status.signed_in && status.seconds_left != null && status.seconds_left <= 300;
+    // Event Atlas's sign-in button is the only sign-in control; it follows this poll.
+    window.dispatchEvent(new CustomEvent("atlas:auth-status", {detail: {signed_in: !!status.signed_in, soon}}));
     banner.textContent = status.signed_in
-      ? `✓ AWS Events: signed in${status.seconds_left == null ? "" : ` · ${Math.ceil(status.seconds_left / 60)} min left`}${soon ? " · sign in again soon" : ""}${status.refreshable ? " · automatic refresh available" : ""}`
+      ? `✓ AWS Events: signed in${status.seconds_left == null ? "" : ` · ${Math.ceil(status.seconds_left / 60)} min left`}${soon ? " · sign in again soon with “再次登入”" : ""}${status.refreshable ? " · automatic refresh available" : ""}`
       : status.reason === "restarted" ? "The app restarted, please sign in again with “登入 AWS Events”."
       : "AWS Events: please sign in again with “登入 AWS Events”.";
     banner.className = status.signed_in && !soon ? "nc-ok" : "nc-warn";
-    // One sign-in control: signed out, Event Atlas's “登入 AWS Events” is it. Only while still signed in but
-    // about to expire (Atlas shows “已登入”, disabled) does the banner offer the re-sign-in.
-    if (soon) {
-      const signIn = el("button", "nc-btn2", "Sign in with AWS Builder ID"); signIn.type = "button";
-      signIn.disabled = !!status.sign_in?.running;
-      signIn.addEventListener("click", async () => {
-        signIn.disabled = true;
-        try { const r = await api("/api/auth/start", {}); location.assign(r.authorization_url); }
-        catch (e) { signIn.disabled = false; signIn.textContent = "Sign-in failed: retry"; }
-      });
-      banner.append(document.createTextNode(" "), signIn);
-    }
     if (signedIn) briefing();
     if (scheduleError) { banner.append(document.createTextNode(" · Could not read your official schedule (" + scheduleError + ")")); banner.className = "nc-warn"; }
     if (!status.signed_in || !s?.signed_in) return;

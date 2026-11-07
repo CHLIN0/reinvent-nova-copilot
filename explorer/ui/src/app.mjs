@@ -20,12 +20,19 @@ import {
 } from "./discovery.mjs";
 import { createScene, VENUES } from "./scene.mjs";
 import { createPlanStore, watchPlan } from "./plan-store.mjs";
-import { chooseTab, homeDay, dayAgenda, dayCounts } from "./my-day.mjs";
+import {
+  homeDay,
+  dayAgenda,
+  dayCounts,
+  createHomeChoice,
+  createCalendarSync,
+} from "./my-day.mjs";
 import {
   createOfficialConnection,
   connectionCopy,
   catalogFailureMessage,
   sourceTimingNote,
+  AUTH_STATUS_EVENT,
 } from "./official-connection.mjs";
 import {
   ZONE,
@@ -100,8 +107,7 @@ let records = [],
   weekScroll = null,
   dayScroll = null;
 let requestedTab = null,
-  dayFromURL = false,
-  userChoseTab = false;
+  dayFromURL = false;
 let planUnavailable = true,
   planError = "";
 const notify = (message) => {
@@ -312,6 +318,8 @@ const calendar = new Calendar($("calendar"), {
   },
 });
 calendar.render();
+// All calendar date/view moves go through this, so it always shows state.day (see renderCalendar).
+const calendarSync = createCalendarSync(calendar, state.view, state.day);
 const stack = createStackCalendar({
   container: $("stack-calendar"),
   onSelect: select,
@@ -354,6 +362,7 @@ function renderCalendar(capture = true) {
   const result = visible();
   const rows = result.filter((r) => r.times);
   if (capture) captureScroll();
+  calendarSync.go(state.view, state.day);
   calendar.batchRendering(() => {
     const bounds = timeBounds(rows);
     if (bounds.min !== slotBounds.min || bounds.max !== slotBounds.max) {
@@ -519,7 +528,7 @@ function renderMine() {
   }
 }
 function setTab(tab, byUser = false) {
-  if (byUser) userChoseTab = true;
+  if (byUser) homeChoice.choose(tab);
   if (state.tab === tab) return;
   captureScroll();
   state.tab = tab;
@@ -600,10 +609,7 @@ function changeView(view, day = state.day) {
     if (view === "day") dayScroll = weekScroll;
     else weekScroll = dayScroll;
   }
-  calendar.changeView(
-    view === "week" ? "fiveDays" : "timeGridDay",
-    view === "week" ? DAYS[0] : day,
-  );
+  calendarSync.go(view, day);
   if (view === "day" && state.panel === "none" && state.tab === "explore")
     state.panel = "map";
   layout();
@@ -619,7 +625,7 @@ function select(key) {
   if (day !== state.day) {
     const needsNavigation = state.view === "day";
     state.day = day;
-    if (needsNavigation) calendar.gotoDate(state.day);
+    if (needsNavigation) calendarSync.go(state.view, state.day);
   }
   setPanel("abstract");
   renderReader(r);
@@ -800,11 +806,30 @@ function refreshPlanButton() {
   }
 }
 // Re-reads /api/plan on Copilot's update event and when the tab is shown again (see watchPlan).
-let officialPlanStatus = null;
+// Signed in → My re:Invent on the attendee's day; signed out → Explore. Either proof of sign-in
+// (/api/auth/status or /api/plan's official.status == "live") can decide or change the tab.
+const homeChoice = createHomeChoice({
+  requested: requestedTab,
+  onChange: applyHome,
+});
+function applyHome({ tab, previous, signedIn }) {
+  $("home-tabs").hidden = !signedIn;
+  if (tab === previous) return;
+  if (tab === "mine" && !dayFromURL) state.day = homeDay();
+  if (
+    previous === null &&
+    tab === "explore" &&
+    state.view === "day" &&
+    state.panel === "none" &&
+    !state.selection
+  )
+    state.panel = "map";
+  setTab(tab);
+  if (state.panel === "map") ensureScene();
+}
 const refreshPlan = watchPlan({
   store: planStore,
   onPlan(loaded, official) {
-    officialPlanStatus = official?.status || null;
     const items = canonicalPlan(loaded);
     const changed =
       planUnavailable || JSON.stringify(items) !== JSON.stringify(state.plan);
@@ -819,6 +844,7 @@ const refreshPlan = watchPlan({
     if (officialError) notify(officialError);
     if (changed) renderCalendar();
     refreshPlanButton();
+    homeChoice.plan(official?.status);
   },
   onError(error) {
     planUnavailable = true;
@@ -1087,29 +1113,16 @@ const officialConnection = createOfficialConnection({
       $("freshness").textContent = auth.checking
         ? "確認官方連線…"
         : "等待官方登入";
-    if (auth.checked && !auth.checking) applySignIn(auth.connected);
+    if (auth.checked && !auth.checking) homeChoice.auth(auth.connected);
   },
   onConnected: load,
 });
-// Signed in → My re:Invent on the attendee's day; signed out → Explore (My re:Invent needs the official schedule).
-function applySignIn(connected) {
-  const signedIn = connected || officialPlanStatus === "live";
-  $("home-tabs").hidden = !signedIn;
-  if (state.tab === null) {
-    const tab = chooseTab({ signedIn, requested: requestedTab });
-    if (tab === "mine" && !dayFromURL) state.day = homeDay();
-    if (tab === "explore" && state.view === "day" && state.panel === "none" && !state.selection)
-      state.panel = "map";
-    calendar.changeView(
-      state.view === "week" ? "fiveDays" : "timeGridDay",
-      state.view === "week" ? DAYS[0] : state.day,
-    );
-    setTab(tab);
-    if (state.panel === "map") ensureScene();
-  } else if (!signedIn && state.tab === "mine") setTab("explore");
-  else if (signedIn && state.tab === "explore" && !userChoseTab && !requestedTab)
-    setTab("mine");
-}
+// Copilot's 60 s status poll keeps the one sign-in button current: re-enabled once signed out or
+// expired, "再次登入" shortly before expiry. A sign-out also re-reads the plan (official status).
+addEventListener(AUTH_STATUS_EVENT, (event) => {
+  officialConnection.applyStatus(event.detail || {});
+  if (event.detail?.signed_in === false) void refreshPlan();
+});
 $("official-sign-in").onclick = async () => {
   const authorizationUrl = await officialConnection.start();
   if (!authorizationUrl) return;

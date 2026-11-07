@@ -12,8 +12,22 @@ class MyReInventTest(unittest.TestCase):
         node = shutil.which("node")
         if not node:
             self.skipTest("node is not installed")
-        run = subprocess.run([node, "--test", "test-my-day.mjs"], cwd=UI, capture_output=True, text=True, timeout=120)
+        run = subprocess.run([node, "--test", "test-my-day.mjs", "test-official-connection.mjs"],
+                             cwd=UI, capture_output=True, text=True, timeout=120)
         self.assertEqual(run.returncode, 0, run.stdout[-3000:] + run.stderr[-2000:])
+
+    def test_atlas_wiring(self):
+        """The tested pieces are the ones Atlas uses: every calendar move goes through the day sync, the plan
+        response feeds the tab choice, and Copilot's status poll reaches the one sign-in button."""
+        app = (UI / "src" / "app.mjs").read_text(encoding="utf-8")
+        self.assertNotRegex(app, r"calendar\.(changeView|gotoDate)\(")
+        self.assertIn("calendarSync.go(state.view, state.day);", app)
+        self.assertIn("homeChoice.plan(official?.status);", app)
+        self.assertIn("officialConnection.applyStatus(", app)
+        copilot = (UI.parent.parent / "web" / "copilot.js").read_text(encoding="utf-8")
+        self.assertIn('"atlas:auth-status"', copilot)
+        self.assertIn('export const AUTH_STATUS_EVENT = "atlas:auth-status";',
+                      (UI / "src" / "official-connection.mjs").read_text(encoding="utf-8"))
 
     def test_built_page_has_both_tabs_and_the_header_toggle(self):
         html = (UI / "dist" / "index.html").read_text(encoding="utf-8")

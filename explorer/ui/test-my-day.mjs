@@ -6,6 +6,8 @@ import {
   dayAgenda,
   dayCounts,
   freeLabel,
+  createHomeChoice,
+  createCalendarSync,
 } from "./src/my-day.mjs";
 
 const item = (code, source, start, end) => ({
@@ -66,7 +68,7 @@ test("gaps between reserved sessions carry their length, picks inside them are n
   assert.deepEqual(dayAgenda(plan, "2026-12-02"), []);
 });
 
-test("overlapping or back-to-back reservations leave no gap; short gaps are not shown", () => {
+test("overlapping or back-to-back reservations leave no gap; every positive gap is shown", () => {
   const rows = dayAgenda(
     [
       item("A", "reserved", "09:00", "11:00"),
@@ -79,7 +81,18 @@ test("overlapping or back-to-back reservations leave no gap; short gaps are not 
   );
   assert.deepEqual(
     rows.map((r) => (r.kind === "gap" ? r.label : r.item.code)),
-    ["A", "B", "C", "D", "1 h free", "E"],
+    ["A", "B", "C", "10 min free", "D", "1 h free", "E"],
+  );
+});
+
+test("a ten-minute gap between reservations is shown with its length (Codex T3 finding 1)", () => {
+  const rows = dayAgenda(
+    [item("A", "reserved", "09:00", "10:00"), item("B", "reserved", "10:10", "11:00")],
+    "2026-11-30",
+  );
+  assert.deepEqual(
+    rows.map((r) => (r.kind === "gap" ? `${r.label} ${r.minutes}` : r.item.code)),
+    ["A", "10 min free 10", "B"],
   );
 });
 
@@ -100,4 +113,64 @@ test("free labels", () => {
   assert.equal(freeLabel(120), "2 h free");
   assert.equal(freeLabel(90), "1 h 30 min free");
   assert.equal(freeLabel(45), "45 min free");
+});
+
+function home(requested = null) {
+  const changes = [];
+  const choice = createHomeChoice({ requested, onChange: (c) => changes.push(c) });
+  return { choice, changes, last: () => changes.at(-1) };
+}
+
+test("a failed auth check followed by a live plan opens My re:Invent (Codex T3 finding 2)", () => {
+  const h = home();
+  h.choice.auth(false); // /api/auth/status failed: connection_unavailable → connected false
+  assert.deepEqual(h.last(), { tab: "explore", previous: null, signedIn: false });
+  h.choice.plan("live"); // /api/plan then proves the official schedule was read
+  assert.deepEqual(h.last(), { tab: "mine", previous: "explore", signedIn: true });
+});
+
+test("a live plan alone decides before auth answers; signed-out plan alone waits", () => {
+  const waiting = home();
+  waiting.choice.plan("signed_out");
+  assert.equal(waiting.changes.length, 0);
+  waiting.choice.auth(true);
+  assert.equal(waiting.last().tab, "mine");
+  const live = home();
+  live.choice.plan("live");
+  assert.deepEqual(live.last(), { tab: "mine", previous: null, signedIn: true });
+});
+
+test("an explicit Explore choice is kept; losing sign-in leaves My re:Invent", () => {
+  const h = home("explore");
+  h.choice.auth(true);
+  assert.equal(h.last().tab, "explore");
+  h.choice.plan("live");
+  assert.equal(h.last().tab, "explore");
+  const user = home();
+  user.choice.auth(true);
+  user.choice.choose("explore");
+  user.choice.plan("live");
+  assert.equal(user.last().tab, "explore");
+  const expired = home();
+  expired.choice.auth(true);
+  expired.choice.plan("live");
+  expired.choice.auth(false);
+  expired.choice.plan("signed_out");
+  assert.deepEqual(expired.last(), { tab: "explore", previous: "mine", signedIn: false });
+});
+
+test("picking a day on My re:Invent moves the Explore calendar too (Codex T3 finding 4)", () => {
+  const calls = [];
+  const calendar = { changeView: (...a) => calls.push(a) };
+  // Explore, single-day view on Tuesday.
+  const sync = createCalendarSync(calendar, "day", "2026-12-01");
+  // My re:Invent: pick Wednesday; Atlas's render calls go(view, day) on every state change.
+  sync.go("day", "2026-12-02");
+  // Back to Explore: same state, nothing more to move; the calendar is already on Wednesday.
+  sync.go("day", "2026-12-02");
+  assert.deepEqual(calls, [["timeGridDay", "2026-12-02"]]);
+  sync.go("week", "2026-12-03");
+  sync.go("week", "2026-12-04");
+  assert.deepEqual(calls.at(-1), ["fiveDays", "2026-11-30"]);
+  assert.equal(calls.length, 2);
 });
