@@ -24,6 +24,8 @@ You ask in plain language, for example: *"I'm into agents and security, I have t
 4. **Builds a feasible day**: `plan_itinerary` locks your must-attend sessions and picks the best set that you can physically reach, explaining what it dropped and why.
 5. **Saves your picks only after you confirm**: `add_favorites` (`AssociateFavorites`) reports per-item results, then reads your schedule back to verify.
 
+![Event Atlas home with the Nova Copilot button](https://raw.githubusercontent.com/CHLIN0/reinvent-nova-copilot/main/docs/images/01-atlas-home.jpg)
+
 Everything lives in one local web app. The main view is Event Atlas, my agenda explorer on the same official API, with filters, five-day and single-day calendars and a 3D campus map. The Nova Copilot panel opens on top of it. One Builder ID sign-in serves both views, and a copilot plan can be added to the Atlas calendar in one click.
 
 The same tools are exposed through an MCP server, so they can sit next to the official `https://api.awsevents.com/mcp` in any MCP client.
@@ -80,6 +82,23 @@ $ python3 chat.py --profile demo-tue --trace "I'm staying at Park MGM, I can wal
 
 The session on security (SYN-SEC302) was dropped because it ends at 17:30, which is after your 17:15 limit to be back for your customer call.
 ```
+
+## Demo: from one sentence to a reserved seat
+
+Ask: *"I'm staying at Park MGM, max 8000 steps a day, into AI agents and security, and I have a customer call Tuesday 17:30 in my room. Plan my Tuesday."*
+
+1. Nova Pro saves the facts to the local profile, searches the catalog, and calls `plan_itinerary` with `back_by: 17:15` and `prefer: fewest_steps`.
+2. The answer lists sessions by code, and every suggested session gets **RSVP** and **☆ Favorite** buttons. The model proposes; the attendee clicks. A click calls the official `ReserveSessions` / `AssociateFavorites`, reports each session's result (`sessionFull`, `scheduleConflict` and so on), then reads the schedule back and shows "verified in your official schedule".
+
+![Suggested sessions with RSVP and favorite buttons](https://raw.githubusercontent.com/CHLIN0/reinvent-nova-copilot/main/docs/images/02-copilot-rsvp-cards.jpg)
+
+3. **Your day** shows the timeline: leave the hotel by 08:12, three sessions clustered at Wynn with 6-minute walks between them, back at the hotel in time for the call, and the seven sessions that were dropped with the reason for each.
+
+![Timeline with hotel departure, transitions and slack](https://raw.githubusercontent.com/CHLIN0/reinvent-nova-copilot/main/docs/images/03-copilot-your-day.jpg)
+
+4. **Add these sessions to my Event Atlas plan** puts them on the calendar and the 3D campus map. On the next visit, the app compares the official schedule with the last snapshot and Nova Pro briefs the attendee on what changed and what to fix.
+
+(Screenshots use the synthetic demo catalog; signed-in runs use the live catalog and the attendee's real schedule.)
 
 ## How it uses the API and MCP
 

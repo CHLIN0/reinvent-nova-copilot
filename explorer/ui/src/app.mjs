@@ -315,11 +315,39 @@ const filterControls = createFilterControls({
     renderCalendar();
   },
 });
+// Data-driven time axis: show only the hours that actually have sessions (plus a little margin),
+// so the first screen is not six empty night hours. Bounds change only when the data changes.
+let slotBounds = { min: "", max: "" };
+function timeBounds(rows) {
+  let min = 24,
+    max = 0;
+  for (const r of rows) {
+    const s = r.session.start_local || "",
+      e = r.session.end_local || "";
+    const h = parseInt(s.slice(11, 13), 10);
+    if (!Number.isNaN(h)) min = Math.min(min, h);
+    if (e.slice(0, 10) !== s.slice(0, 10)) max = 24;
+    else {
+      const eh =
+        parseInt(e.slice(11, 13), 10) + (e.slice(14, 16) === "00" ? 0 : 1);
+      if (!Number.isNaN(eh)) max = Math.max(max, Math.min(24, eh));
+    }
+  }
+  if (min >= max) return { min: "07:00:00", max: "22:00:00" };
+  const pad = (n) => String(n).padStart(2, "0") + ":00:00";
+  return { min: pad(Math.max(0, min)), max: pad(Math.min(24, max)) };
+}
 function renderCalendar(capture = true) {
   const result = visible();
   const rows = result.filter((r) => r.times);
   if (capture) captureScroll();
   calendar.batchRendering(() => {
+    const bounds = timeBounds(rows);
+    if (bounds.min !== slotBounds.min || bounds.max !== slotBounds.max) {
+      slotBounds = bounds;
+      calendar.setOption("slotMinTime", bounds.min);
+      calendar.setOption("slotMaxTime", bounds.max);
+    }
     calendar.removeAllEventSources();
     calendar.addEventSource(
       rows.map((r) => ({
