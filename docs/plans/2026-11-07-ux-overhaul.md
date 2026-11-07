@@ -1,6 +1,6 @@
 # Roadmap: re:Invent Nova Copilot (post-submission)
 
-Status: **v2 draft for BR's review, 2026-11-07**. Nothing is started. v1 (the UX overhaul) is now Milestone 0 of this roadmap.
+Status: **v2.2, approved by BR on 2026-11-07 with adjustments (section M2). M0 T0/T1/T2 and the research spikes started 2026-11-07.** Defaults BR did not object to: T3 opens on the first conference day until 2026-11-30, then today; T8 keeps the CLI and deletes `/copilot`; T7's real cancel waits for BR's go on the day; M2a spend cap USD 20. v1 (the UX overhaul) is now Milestone 0 of this roadmap.
 
 ## 1. What BR wants (his words, condensed; the roadmap must not drift from these)
 
@@ -36,7 +36,11 @@ T1 server-side state · T2 reservations locked in code · T3 signed-in first scr
 - Acceptance: a judge-style test: for any plan, every line can be traced to a tool result in the trace view; changing a filter updates the plan in under 2 s without a model call.
 - Must not: new model calls per view; embeddings unless M1c proves a need with examples.
 
-### M2 · Agent runtime and cost (E2)
+### M2 · Agent architecture, runtime and cost (E2; widened on 2026-11-07 per BR)
+BR's asks: evaluate AgentCore specifically for (a) the official re:Invent API/MCP integration and (b) our own service interface (API, MCP, or better); route different tasks to different models and integrate their results; keep the user profile as Markdown with a *principle* layer (a harness: rules that adapt behaviour to the user's situation); treat the agenda as a database and ideally a knowledge base, cost-aware; use good, current frameworks so the AI solves tasks more cheaply, clearly and correctly. Research and evaluate before building; use Codex (gpt-6.1-sol) for the research, not only Claude.
+- **M2r Architecture research (Codex, 2 days, read-only)**: one memo, `docs/research/agent-architecture-2026-11.md`, with dated sources and a cost column per option, covering: (1) AgentCore Runtime / Gateway / Identity / Memory / Observability as they exist today, and how each would carry our tools, the official MCP, Builder ID OAuth and the profile; (2) our service interface: keep REST + our MCP server, or expose through AgentCore Gateway, or both; (3) task→model routing: which steps need Nova Pro, which can use Nova Lite/Micro or deterministic code, with measured token costs from our ledger; (4) profile as Markdown + principles (harness) vs. the current JSON: format, where the principles live, how the prompt consumes them; (5) agenda storage: local SQLite/JSON vs. Bedrock Knowledge Bases vs. a small local vector index, with cost and freshness (the catalog changes), and what "knowledge base" buys for explainable recommendations; (6) a recommended target architecture with a migration path from today's code and the first two steps. Each recommendation names the attendee-visible benefit; anything without one is marked "not now".
+- **M2a Spike (after the memo, 2 days, spend cap USD 20)**: deploy the existing agent on the recommended runtime path; same 8-scenario battery both ways; latency, tokens, USD, operational differences.
+- **M2b Decide**: migrate only with numbers and an attendee-visible benefit.
 - **M2a Spike (2 days)**: deploy the existing agent to Bedrock AgentCore Runtime in us-east-1 (plus AgentCore Memory for the profile and Gateway for the tools, if that is how the service is shaped at the time); run the same 8-scenario battery on both paths; record latency, tokens, USD, and operational differences. Output: a decision memo with numbers.
 - **M2b Decide**: migrate only if the memo shows a benefit the attendee feels (reliability, latency, memory across sessions) at a cost BR accepts. Otherwise stay on direct Converse and keep the memo as the record.
 - Cost ledger stays either way.
@@ -107,7 +111,7 @@ M0 first (T0+T1+T2 → T3+T4+T5+T10 → T6+T7+T8 → T9). The three spikes (M2a,
 ## 6. How the work runs
 
 1. **Host (this session)**: owns this roadmap and the order; writes one brief per task from this file; starts one session per task in its own worktree, at most three in parallel; verifies acceptance in BR's Chrome before merging; merges sequentially.
-2. **Builders**: Claude Code sessions on Opus 5.5 for product code; Codex (gpt-6.1-sol) for spikes and research memos, and for development tasks the host assigns it (same brief format, same PR rules). Never GPT-6 Astra without BR's say.
+2. **Builders**: Claude Code sessions on Opus 5.5 for product code; Codex (gpt-6.1-sol) for research memos (M2r, M3a, M4a) and for development tasks the host assigns it (same brief format, same PR rules). Different models for different steps is a design goal of the product too (M2r item 3). Never GPT-6 Astra without BR's say. Work is not kept in the host session: the host dispatches, verifies and merges.
 3. **Review gate on every PR**: Codex review (gpt-6.1-sol) with a fixed checklist: scope equals the task's acceptance and nothing more; no speculative abstraction; no new dependency without a line in the brief; tests present and meaningful; no secrets or local paths; UI claims backed by a screenshot; cost ledger entries present for any new model call.
 4. **BR's gates**: approve this roadmap; read each spike memo before its build starts; approve real writes to the official schedule (T7); approve removals (T8); approve any spend above the ledger's running estimate.
 5. **Hygiene**: usage check before each fan-out; Codex availability verified before the first PR; every merge updates `docs/costs.md` if a model call changed.
