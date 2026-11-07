@@ -171,7 +171,8 @@ def _briefing() -> dict:
               "3) if my profile is missing my hotel or walking limit, ask for it in one line.")
     out = _chat(prompt, allow_write=False, feature="briefing")
     out["text"], out["removed"] = guard.strip_unverified_feasibility(out["text"], out["trace"])
-    out["text"] = answer_format.cap_words(out["text"])  # the guard may append a sentence
+    if out["removed"]:  # the guard appended a sentence; plan lines stay protected by the trace
+        out["text"] = answer_format.cap_words(out["text"], out["trace"])
     out["schedule_diff"] = diff
     out["first_visit"] = first_visit
     return out

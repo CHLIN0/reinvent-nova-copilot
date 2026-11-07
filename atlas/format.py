@@ -41,16 +41,6 @@ def _field(call: Any, key: str) -> Any:
     return call.get(key) if isinstance(call, dict) else getattr(call, key, None)
 
 
-def _last_plan(trace: list) -> tuple[dict, dict] | None:
-    """(tool result, tool input) of the last successful plan_itinerary call with a dict result."""
-    for call in reversed(trace or []):
-        result = _field(call, "result")
-        if _field(call, "name") == "plan_itinerary" and _field(call, "ok") and isinstance(result, dict):
-            if isinstance(result.get("plan"), dict):
-                return result, _field(call, "input") or {}
-    return None
-
-
 def _plans(trace: list) -> list[tuple[dict, dict]]:
     """(tool result, tool input) of every successful plan_itinerary call with a dict result, in order."""
     out = []
@@ -60,6 +50,16 @@ def _plans(trace: list) -> list[tuple[dict, dict]]:
                 and isinstance(result.get("plan"), dict):
             out.append((result, _field(call, "input") or {}))
     return out
+
+
+def _latest_plans(trace: list) -> list[tuple[dict, dict]]:
+    """The latest successful plan for each day: a day planned again counts with its last plan only."""
+    latest: dict = {}
+    for result, args in _plans(trace):
+        day = _day_of(result["plan"], args)
+        latest.pop(day, None)
+        latest[day] = (result, args)
+    return list(latest.values())
 
 
 def _planned_keys(trace: list) -> set[str]:
@@ -221,17 +221,14 @@ def honest_additions(text: str, trace: list) -> str:
     With several plans in one answer (one per day), a claim is checked against the plan of the day it
     names; a claim that names a session the planner really added is kept.
     """
-    facts = [_plan_facts(r, a) for r, a in _plans(trace)]
-    latest = {}
-    for f in facts:  # a day planned again counts with its latest plan only
-        latest.pop(f["day"], None)
-        latest[f["day"]] = f
-    empty = [f for f in latest.values() if f["adds_nothing"]]
+    latest = {f["day"]: f for f in (_plan_facts(r, a) for r, a in _latest_plans(trace))}
+    facts = list(latest.values())
+    empty = [f for f in facts if f["adds_nothing"]]
     if not text or not empty:
         return text
     added = _code_pattern({k for f in facts for k in f["added"]})
     sessions = _code_pattern(_planned_keys(trace) | {k for f in facts for k in f["added"]}
-                             | {k for r, _ in _plans(trace) for d in r["plan"].get("dropped") or []
+                             | {k for r, _ in _latest_plans(trace) for d in r["plan"].get("dropped") or []
                                 if isinstance(d, dict) for k in _keys(d)})
     empty_days = {f["day"]: f for f in empty}
     every_plan_empty = len(empty) == len(latest)
@@ -299,12 +296,14 @@ def _collapse_span(piece: str, start: int, end: int, summary: str) -> str:
 
 def collapse_dropped(text: str, trace: list) -> str:
     """Collapse sentences or runs of lines that list more than three dropped sessions."""
-    found = _last_plan(trace)
-    if not text or not found:
+    plans = [r["plan"] for r, _ in _latest_plans(trace)]
+    if not text or not plans:
         return text
-    plan = found[0]["plan"]
-    dropped_rows = [r for r in plan.get("dropped") or [] if isinstance(r, dict)]
-    chosen_keys = {k.upper() for r in plan.get("chosen") or [] if isinstance(r, dict) for k in _keys(r)}
+    chosen_keys = {k.upper() for p in plans for r in p.get("chosen") or [] if isinstance(r, dict) for k in _keys(r)}
+    # dropped = not chosen by any day's plan; "not on <day>" only means another day's candidate
+    dropped_rows = [r for p in plans for r in p.get("dropped") or [] if isinstance(r, dict)
+                    and not str(r.get("reason") or "").startswith("not on ")
+                    and not {k.upper() for k in _keys(r)} & chosen_keys]
     label = {}
     for r in dropped_rows:
         for k in _keys(r):
@@ -382,13 +381,17 @@ _MINUTES = re.compile(r"\b\d+(?:\.\d+)?\s*(?:min|mins|minutes)\b|\d+\s*分鐘", 
 
 
 def _is_plan_line(line: str, codes: re.Pattern | None) -> bool:
-    """A line naming a session the tools planned or checked, or a short line with a clock time or a
-    travel time in minutes (leave the hotel, a transition, back to the hotel)."""
+    """A short line with a clock time, travel minutes or a session the tools planned or checked (leave
+    the hotel, a session, a transition, back to the hotel), or a longer line that starts with a time or
+    a planned session code (a long title)."""
     if not line.strip():
         return False
-    if codes and codes.search(line):
-        return True
-    return bool(_CLOCK.search(line) or _MINUTES.search(line)) and count_words(line) <= PLAN_LINE_MAX_WORDS
+    if count_words(line) <= PLAN_LINE_MAX_WORDS:
+        return bool(_CLOCK.search(line) or _MINUTES.search(line) or (codes and codes.search(line)))
+    # a longer line is still a plan line when it starts with a time or a planned code (a long title),
+    # but prose that merely names a code is not
+    head = line.lstrip()
+    return bool(_CLOCK.match(head) or (codes and codes.match(head)))
 
 
 def _shorten(piece: str, words: int) -> str:

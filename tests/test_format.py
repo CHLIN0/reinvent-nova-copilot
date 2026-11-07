@@ -109,6 +109,12 @@ class HonestAdditionsTest(unittest.TestCase):
                      "You could add a session on Thursday instead."):
             self.assertEqual(fmt.honest_additions(text, trace), text)
 
+    def test_session_removed_by_replan_is_not_added(self):
+        """Codex round 3: the re-plan dropped SYN-GEN101 again, so the claim is false."""
+        trace = [plan_call([KEY02, AI407, GEN101]), plan_call([KEY02, AI407])]
+        self.assertEqual(fmt.honest_additions("I added SYN-GEN101 on Wednesday.", trace),
+                         "No additional session fits around your reservations on Wednesday.")
+
     def test_no_plan_no_change(self):
         text = "I added two sessions."
         self.assertEqual(fmt.honest_additions(text, []), text)
@@ -140,6 +146,14 @@ class DroppedTest(unittest.TestCase):
         """Codex round 2: two short runs separated by planned sessions are not one long list."""
         trace = [plan_call([GEN101, AI407], DROPPED[:4], locked=())]
         text = "Choose SYN-GEN101 over SYN-DRP100 or SYN-DRP101, and SYN-AI407 over SYN-DRP102 or SYN-DRP103."
+        self.assertEqual(fmt.collapse_dropped(text, trace), text)
+
+    def test_other_days_sessions_are_not_dropped(self):
+        """Codex round 3: Wednesday's plan lists Tuesday's chosen sessions as "not on Wed"."""
+        tue = [{"id": f"t{i}", "code": f"SYN-TUE{100 + i}", "start": "2026-12-01T09:00:00-08:00"} for i in range(6)]
+        trace = [plan_call(tue, [{**GEN101, "reason": "not on Tue"}], locked=(), day="Tue"),
+                 plan_call([KEY02, AI407], [{**r, "reason": "not on Wed"} for r in tue] + DROPPED[:2])]
+        text = "Tuesday:\n" + "\n".join(f"{9 + i}:00 {r['code']} Title" for i, r in enumerate(tue)) + "\nWednesday keeps SYN-KEY02."
         self.assertEqual(fmt.collapse_dropped(text, trace), text)
 
     def test_three_or_fewer_untouched(self):
@@ -182,6 +196,13 @@ class CapTest(unittest.TestCase):
         for line in transit:
             self.assertIn(line, out)
         self.assertLessEqual(fmt.count_words(out), fmt.MAX_WORDS)
+
+    def test_prose_naming_a_code_is_not_a_plan_line(self):
+        """Codex round 3: a long paragraph that names a planned code is still capped."""
+        para = "Yes, SYN-GEN101 fits. " + " ".join(f"It also matters that point {i} is explained here." for i in range(25))
+        out = fmt.format_answer(para, [plan_call([GEN101], locked=())])
+        self.assertLessEqual(fmt.count_words(out), fmt.MAX_WORDS)
+        self.assertTrue(out.startswith("Yes, SYN-GEN101 fits."))
 
     def test_long_first_sentence_is_shortened_last(self):
         first = "Yes " + "and it also works because of many reasons " * 30 + "today."

@@ -193,6 +193,25 @@ class Battery(Base):
         self.assertTrue(text.startswith("Welcome back\nWednesday has no conflicts"), text)
         self.assertTrue(text.endswith("which hotel are you staying at?"), text)
 
+    def test_briefing_keeps_long_plan_lines(self):
+        """Codex round 3: the briefing's second cap must not undo _chat's plan-line protection."""
+        mock.patch.object(web, "_my_schedule", return_value={"signed_in": True, "reserved": [
+            {"id": "syn-k002", "code": "SYN-KEY02", "start": "2026-12-02T08:00:00-08:00"}], "favorites": []}).start()
+        long_title = " with a deliberately long descriptive title that keeps going for the test" * 2
+        lines = [f"08:00-10:00 SYN-KEY02 Keynote{long_title}, Venetian",
+                 f"10:30-11:30 SYN-AI407 Agents{long_title}, Wynn",
+                 f"15:00-16:00 SYN-GEN309 Pair programming{long_title}, Caesars Forum"]
+        self.fake = FakeBedrock([
+            tool_use("check_itinerary", {"session_ids": RESERVED}, "c"),
+            final("Wednesday works with one tight transition.\n" + "\n".join(lines) + "\n"
+                  + "A longer explanation sentence follows here for the panel. " * 12 + "Next, reserve seats."),
+        ])
+        web._state["agent"] = Agent(client=self.fake, backend=self.be)
+        text = web._briefing()["text"]
+        for line in lines:
+            self.assertIn(line, text)
+        self.assertIsNone(MARKDOWN.search(text), text)
+
     # 6 ------------------------------------------------------------------------------------------
     def test_dropped_list_dump(self):
         """The answer listed every dropped session on its own line."""
