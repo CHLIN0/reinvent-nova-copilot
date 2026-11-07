@@ -71,6 +71,28 @@ class HonestAdditionsTest(unittest.TestCase):
         out = fmt.honest_additions("週三已為你新增兩場。出發前確認座位。", trace)
         self.assertEqual(out, "週三除了你的預約，沒有其他場次排得進去。出發前確認座位。")
 
+    def test_profile_addition_is_not_a_session_claim(self):
+        """Codex review: 'added your hotel' is not an added session."""
+        trace = [plan_call([KEY02, AI407])]
+        text = "I added your hotel to your profile. Your Wednesday reservations were kept."
+        self.assertEqual(fmt.honest_additions(text, trace), text)
+
+    def test_claim_checked_against_its_own_day(self):
+        """Codex review: Tuesday's plan added SYN-AI202, Wednesday's kept only reservations."""
+        ai202 = {"id": "syn-0002", "code": "SYN-AI202", "start": "2026-12-01T09:00:00-08:00"}
+        trace = [plan_call([ai202], locked=(), day="Tue"), plan_call([KEY02, AI407])]
+        text = ("I added SYN-AI202 on Tuesday. On Tuesday I also added two more sessions. "
+                "On Wednesday I added two extra sessions.")
+        self.assertEqual(fmt.honest_additions(text, trace),
+                         "I added SYN-AI202 on Tuesday. On Tuesday I also added two more sessions. "
+                         "No additional session fits around your reservations on Wednesday.")
+
+    def test_unnamed_day_with_mixed_plans_is_kept(self):
+        ai202 = {"id": "syn-0002", "code": "SYN-AI202", "start": "2026-12-01T09:00:00-08:00"}
+        trace = [plan_call([ai202], locked=(), day="Tue"), plan_call([KEY02, AI407])]
+        text = "Both plans have the added sessions."
+        self.assertEqual(fmt.honest_additions(text, trace), text)
+
     def test_no_plan_no_change(self):
         text = "I added two sessions."
         self.assertEqual(fmt.honest_additions(text, []), text)
@@ -89,6 +111,14 @@ class DroppedTest(unittest.TestCase):
         trace = [plan_call([GEN101], DROPPED[:5], locked=())]
         out = fmt.collapse_dropped(f"10:00 SYN-GEN101 Forum\nDropped sessions:\n{lines}\nNext, reserve.", trace)
         self.assertEqual(out, "10:00 SYN-GEN101 Forum\n5 dropped (3 shown: SYN-DRP100, SYN-DRP101, SYN-DRP102).\nNext, reserve.")
+
+    def test_only_the_list_fragment_is_replaced(self):
+        """Codex review: the advice around the list survives."""
+        trace = [plan_call([GEN101], DROPPED[:4], locked=())]
+        text = "Keep SYN-GEN101 instead of SYN-DRP100, SYN-DRP101, SYN-DRP102 and SYN-DRP103 because they overlap."
+        self.assertEqual(fmt.collapse_dropped(text, trace),
+                         "Keep SYN-GEN101 instead of 4 dropped (3 shown: SYN-DRP100, SYN-DRP101, SYN-DRP102) "
+                         "because they overlap.")
 
     def test_three_or_fewer_untouched(self):
         trace = [plan_call([GEN101], DROPPED[:3], locked=())]
@@ -112,6 +142,35 @@ class CapTest(unittest.TestCase):
         self.assertTrue(out.startswith("Yes, it works.\n"))
         self.assertIn(plan, out)
         self.assertTrue(out.endswith("Next, reserve SYN-X100."))
+
+    def test_long_plan_line_is_protected(self):
+        """Codex review: a session line with a long title is a plan line, whatever its length."""
+        long_line = "12:00-13:00 SYN-GEN101 " + "Retrieval that survives messy PDFs and very long titles " * 4 + "Caesars Forum"
+        prose = " ".join(f"Filler sentence number {i} explains a detail at length." for i in range(30))
+        out = fmt.cap_words(f"Yes, it works.\n{long_line}\n{prose}", [plan_call([GEN101], locked=())])
+        self.assertIn(long_line, out)
+        self.assertLessEqual(fmt.count_words(out), fmt.MAX_WORDS)
+
+    def test_long_first_sentence_is_shortened_last(self):
+        first = "Yes " + "and it also works because of many reasons " * 30 + "today."
+        out = fmt.cap_words(first + " Next, reserve.")
+        self.assertLessEqual(fmt.count_words(out), fmt.MAX_WORDS)
+        self.assertTrue(out.startswith("Yes and it also works"))
+
+    def test_eight_session_plan_stays_intact_over_the_cap(self):
+        """Documented limit: plan lines are never cut, so the largest derived plan may exceed 160 words."""
+        rows = [{"id": f"p{i}", "code": f"SYN-P{100 + i}"} for i in range(8)]
+        lines = []
+        for i in range(8):
+            lines.append(f"{8 + i}:00-{8 + i}:45 SYN-P{100 + i} A fairly long session title about agents and data, Venetian Level 3")
+            if i < 7:
+                lines.append(f"{8 + i}:45 to {9 + i}:00 Venetian to Venetian, 5 min walk, fine")
+        text = "Yes, all eight fit.\n" + "\n".join(lines) + "\nTravel is an estimate. Next, reserve."
+        self.assertGreater(fmt.count_words(text), fmt.MAX_WORDS)
+        out = fmt.cap_words(text, [plan_call(rows, locked=())])
+        for line in lines:
+            self.assertIn(line, out)
+        self.assertGreater(fmt.count_words(out), fmt.MAX_WORDS)
 
     def test_cjk_counts_characters(self):
         self.assertEqual(fmt.count_words("週三 SYN-AI407 at 10:30"), 5)

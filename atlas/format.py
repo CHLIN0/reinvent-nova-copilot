@@ -2,7 +2,8 @@
 
 Pure functions over the model's text and the tool trace (ToolCall objects or web.py's dict trace):
 strip Markdown symbols, never claim added sessions the planner did not add, collapse long dropped
-lists to "N dropped (3 shown: ...)", and cap answers at 160 words without cutting plan lines.
+lists to "N dropped (3 shown: ...)", and cap answers at 160 words without cutting plan lines
+(a plan whose own lines exceed 160 words, e.g. eight sessions with all transitions, stays over).
 """
 from __future__ import annotations
 
@@ -48,6 +49,34 @@ def _last_plan(trace: list) -> tuple[dict, dict] | None:
             if isinstance(result.get("plan"), dict):
                 return result, _field(call, "input") or {}
     return None
+
+
+def _plans(trace: list) -> list[tuple[dict, dict]]:
+    """(tool result, tool input) of every successful plan_itinerary call with a dict result, in order."""
+    out = []
+    for call in trace or []:
+        result = _field(call, "result")
+        if _field(call, "name") == "plan_itinerary" and _field(call, "ok") and isinstance(result, dict) \
+                and isinstance(result.get("plan"), dict):
+            out.append((result, _field(call, "input") or {}))
+    return out
+
+
+def _planned_keys(trace: list) -> set[str]:
+    """Ids and codes of sessions a tool placed in a plan or itinerary check."""
+    keys: set[str] = set()
+    for call in trace or []:
+        result = _field(call, "result")
+        if not (_field(call, "ok") and isinstance(result, dict)):
+            continue
+        if _field(call, "name") == "plan_itinerary" and isinstance(result.get("plan"), dict):
+            rows = result["plan"].get("chosen") or []
+        elif _field(call, "name") == "check_itinerary":
+            rows = result.get("sessions") or []
+        else:
+            continue
+        keys |= {k for r in rows if isinstance(r, dict) for k in _keys(r)}
+    return keys
 
 
 def _keys(row: dict) -> set[str]:
@@ -127,20 +156,22 @@ def _day_of(plan: dict, args: dict) -> int | None:
     return None
 
 
-def adds_nothing(trace: list) -> dict | None:
-    """When the last plan keeps only the reservations (and must-attend sessions), the facts to say so."""
-    found = _last_plan(trace)
-    if not found:
-        return None
-    result, args = found
+def _plan_facts(result: dict, args: dict) -> dict:
+    """Day, whether the planner added sessions beyond the reservations and must-attend ones, and which."""
     plan = result["plan"]
     chosen = [r for r in plan.get("chosen") or [] if isinstance(r, dict)]
     locked = {c for c in result.get("locked_from_schedule") or [] if isinstance(c, str)}
     must = {c for c in args.get("must") or [] if isinstance(c, str)}
-    base = locked | must
-    if any(not (_keys(r) & base) for r in chosen):
-        return None  # the planner added at least one session
-    return {"day": _day_of(plan, args), "reservations": bool(locked)}
+    added = [r for r in chosen if not (_keys(r) & (locked | must))]
+    return {"day": _day_of(plan, args), "reservations": bool(locked),
+            "added": {k for r in added for k in _keys(r)}, "adds_nothing": not added}
+
+
+def adds_nothing(trace: list) -> dict | None:
+    """When the last plan keeps only the reservations (and must-attend sessions), the facts to say so."""
+    plans = _plans(trace)
+    facts = _plan_facts(*plans[-1]) if plans else None
+    return facts if facts and facts["adds_nothing"] else None
 
 
 def no_addition_sentence(facts: dict, cjk: bool = False) -> str:
@@ -152,34 +183,80 @@ def no_addition_sentence(facts: dict, cjk: bool = False) -> str:
     return NO_ADDITION.format(day=_WEEKDAY[i] if i is not None else "that day", base=base)
 
 
-def _claims_addition(piece: str) -> bool:
+_SESSION_WORD = re.compile(r"\b(?:sessions?|workshops?|talks?|breakouts?|keynotes?|builders)\b", re.I)
+_SESSION_WORD_ZH = re.compile(r"場|工作坊|講座")
+_DAY_NAME = re.compile(r"\b(mon|tue|wed|thu|fri)(?:day|nesday|sday|rsday)?\b|(週[一二三四五])", re.I)
+_ZH_DAY = {d: i for i, d in enumerate(_WEEKDAY_ZH)}
+
+
+def _claims_addition(piece: str, codes: re.Pattern | None) -> bool:
+    """A sentence that says sessions were added (not negated, and about sessions, not e.g. a profile)."""
     if _NO_ADDITION_MARK.search(piece):
         return False
+    about_session = bool(codes and codes.search(piece))
     if _CLAIM.search(piece) and not _NEGATION.search(piece):
-        return True
-    return bool(_CLAIM_ZH.search(piece)) and not _NEGATION_ZH.search(piece)
+        return about_session or bool(_SESSION_WORD.search(piece))
+    if _CLAIM_ZH.search(piece) and not _NEGATION_ZH.search(piece):
+        return about_session or bool(_SESSION_WORD_ZH.search(piece))
+    return False
+
+
+def _days_named(piece: str) -> set[int]:
+    out = set()
+    for m in _DAY_NAME.finditer(piece):
+        out.add(_DAY_ABBR[m.group(1).lower()] if m.group(1) else _ZH_DAY[m.group(2)])
+    return out
 
 
 def honest_additions(text: str, trace: list) -> str:
-    """Replace claims of added sessions with the plain statement when the planner added none."""
-    facts = adds_nothing(trace)
-    if not text or facts is None:
+    """Replace claims of added sessions with the plain statement for each plan that added none.
+
+    With several plans in one answer (one per day), a claim is checked against the plan of the day it
+    names; a claim that names a session the planner really added is kept.
+    """
+    facts = [_plan_facts(r, a) for r, a in _plans(trace)]
+    empty = [f for f in facts if f["adds_nothing"]]
+    if not text or not empty:
         return text
-    already = bool(_NO_ADDITION_MARK.search(text))  # the model said it plainly too: only drop the claims
-    lines, replaced = [], False
+    added = _code_pattern({k for f in facts for k in f["added"]})
+    sessions = _code_pattern(_planned_keys(trace) | {k for f in facts for k in f["added"]}
+                             | {k for r, _ in _plans(trace) for d in r["plan"].get("dropped") or []
+                                if isinstance(d, dict) for k in _keys(d)})
+    empty_days = {f["day"]: f for f in empty}
+    every_plan_empty = len(empty) == len(facts)
+    already: set = set()  # days the model already stated plainly: only drop the claims there
+    for line in text.split("\n"):
+        for piece in _pieces(line):
+            if _NO_ADDITION_MARK.search(piece):
+                already |= (_days_named(piece) & set(empty_days)) or set(empty_days)
+    said: set = set()
+    lines, changed = [], False
     for line in text.split("\n"):
         kept = []
         for piece in _pieces(line):
-            if not _claims_addition(piece):
+            if not _claims_addition(piece, sessions) or (added and added.search(piece)):
                 kept.append(piece)
-            elif not replaced and not already:
-                cjk = _is_cjk(piece)
-                kept.append(no_addition_sentence(facts, cjk) + ("" if cjk else " "))
-                replaced = True
+                continue
+            days = _days_named(piece)
+            if days:
+                hit = [empty_days[d] for d in sorted(days) if d in empty_days]
+                if not hit or len(hit) < len(days):
+                    kept.append(piece)  # names a day whose plan did add sessions
+                    continue
+            elif not every_plan_empty:
+                kept.append(piece)  # cannot tell which day it means
+                continue
             else:
-                replaced = True
+                hit = [empty[-1]]
+            changed = True
+            cjk = _is_cjk(piece)
+            for f in hit:
+                if f["day"] in said or f["day"] in already:
+                    continue
+                said.add(f["day"])
+                kept.append(no_addition_sentence(f, cjk) + ("" if cjk else " "))
         lines.append("".join(kept).rstrip())
-    return _tidy("\n".join(lines)) if replaced else text
+    return _tidy("\n".join(lines)) if changed else text
 
 
 # ---- 3. Dropped lists ------------------------------------------------------------------------------
@@ -191,21 +268,23 @@ def dropped_summary(n: int, shown: list[str], cjk: bool = False) -> str:
     return f"{n} dropped ({len(shown)} shown: {', '.join(shown)})."
 
 
-_REASON = re.compile(r"^[\s,;:\-–]*(?:because|since|due to|as they|as both|which|that)\b|^[\s，、]*(?:因為|由於)", re.I)
+_LIST_HEADER = re.compile(r"(?i)(?:\b(?:the planner |i )?dropped(?: sessions)?|未排入(?:的場次)?)\s*[:：]?\s*$")
 
 
-def _summary_keeping_reason(piece: str, pattern: re.Pattern, summary: str) -> str:
-    """The summary, plus the reason clause that followed the listed codes ("... because they overlap ...")."""
-    last = None
-    for last in pattern.finditer(piece):
-        pass
-    tail = piece[last.end():] if last else ""
-    trailing = " " if piece.endswith((" ", "\t")) else ""
-    if tail.strip() and _REASON.match(tail):
-        clause = re.sub(r"^[\s,;:\-–，、]+", "", tail).rstrip()
-        sep = "，" if summary.endswith("。") else " "
-        return summary[:-1] + sep + clause + trailing
-    return summary + trailing
+def _collapse_fragment(piece: str, pattern: re.Pattern, summary: str) -> str:
+    """Replace only the stretch from the first to the last dropped code with the summary; the rest of
+    the sentence (what to keep instead, the reason) stays. A "Dropped:" lead-in merges into the summary."""
+    matches = list(pattern.finditer(piece))
+    head, tail = piece[:matches[0].start()], piece[matches[-1].end():]
+    head = _LIST_HEADER.sub("", head)
+    core = summary[:-1]  # without the final period
+    if not tail.strip():
+        return head + summary + tail
+    if summary.endswith("。") and not re.match(r"^\s*[，。、！？]", tail):
+        tail = "，" + tail.lstrip(" ,;:，、")
+    elif not summary.endswith("。"):
+        tail = re.sub(r"^[\s,;:]+(?=\S)", " ", tail) if not re.match(r"^[.!?]", tail) else tail
+    return head + core + tail
 
 
 def collapse_dropped(text: str, trace: list) -> str:
@@ -252,7 +331,7 @@ def collapse_dropped(text: str, trace: list) -> str:
         for piece in _pieces(line):
             codes = mentioned(piece)
             if len(codes) > SHOWN_DROPPED and len(codes) > n_chosen(piece):
-                piece = _summary_keeping_reason(piece, pattern, dropped_summary(n, codes, _is_cjk(piece)))
+                piece = _collapse_fragment(piece, pattern, dropped_summary(n, codes, _is_cjk(piece)))
             pieces.append(piece)
         lines.append("".join(pieces))
 
@@ -276,39 +355,53 @@ def collapse_dropped(text: str, trace: list) -> str:
 
 # ---- 4. Length -------------------------------------------------------------------------------------
 
+FIRST_SENTENCE_MAX_WORDS = 40
+
+
 def _is_plan_line(line: str, codes: re.Pattern | None) -> bool:
-    if not line.strip() or count_words(line) > PLAN_LINE_MAX_WORDS:
+    """A line naming a session the tools planned or checked, or a short line with a clock time
+    (leave the hotel, a transition, back to the hotel)."""
+    if not line.strip():
         return False
-    return bool(_CLOCK.search(line) or (codes and codes.search(line)))
+    if codes and codes.search(line):
+        return True
+    return bool(_CLOCK.search(line)) and count_words(line) <= PLAN_LINE_MAX_WORDS
+
+
+def _shorten(piece: str, words: int) -> str:
+    kept = list(_WORD.finditer(piece))
+    if len(kept) <= words:
+        return piece
+    return piece[:kept[words - 1].end()].rstrip(" ,;:，、") + "…"
 
 
 def cap_words(text: str, trace: list | None = None, limit: int = MAX_WORDS) -> str:
     """Trim prose sentences until the answer has at most `limit` words.
 
-    Plan lines (short lines with a clock time or a planned session code), the first sentence (the
-    direct answer) and the "no additional session" sentence are never cut. Prose is trimmed from
-    the end, keeping the closing next step for as long as possible.
+    Plan lines (lines naming a session the tools planned or checked, and short lines with a clock
+    time), the first sentence (the direct answer) and the "no additional session" sentence are kept.
+    Prose is trimmed from the end, keeping the closing next step for as long as possible; then a first
+    sentence longer than 40 words is shortened. Plan lines are never cut, so a plan whose own lines
+    exceed the limit (eight sessions with all their transitions) stays over it.
     """
     if not text or count_words(text) <= limit:
         return text
-    found = _last_plan(trace or [])
-    chosen = {k for r in (found[0]["plan"].get("chosen") or []) if isinstance(r, dict) for k in _keys(r)} if found else set()
-    codes = _code_pattern(chosen)
+    codes = _code_pattern(_planned_keys(trace or []))
     lines = [_pieces(line) for line in text.split("\n")]
     removable: list[tuple[int, int]] = []
-    first = True
+    first_at: tuple[int, int] | None = None
     for li, pieces in enumerate(lines):
         line = "".join(pieces)
         if not line.strip():
             continue
         if _is_plan_line(line, codes):
-            first = False
+            first_at = first_at or (-1, -1)
             continue
         for pi, piece in enumerate(pieces):
             if not piece.strip():
                 continue
-            if first:
-                first = False
+            if first_at is None:
+                first_at = (li, pi)
                 continue
             if _NO_ADDITION_MARK.search(piece):
                 continue
@@ -320,6 +413,9 @@ def cap_words(text: str, trace: list | None = None, limit: int = MAX_WORDS) -> s
             break
         total -= count_words(lines[li][pi])
         lines[li][pi] = ""
+    if total > limit and first_at and first_at[0] >= 0:
+        li, pi = first_at
+        lines[li][pi] = _shorten(lines[li][pi], FIRST_SENTENCE_MAX_WORDS)
     return _tidy("\n".join("".join(p).rstrip() for p in lines))
 
 
