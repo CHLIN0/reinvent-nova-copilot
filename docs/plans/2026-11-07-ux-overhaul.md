@@ -1,6 +1,6 @@
 # Roadmap: re:Invent Nova Copilot (post-submission)
 
-Status: **v2.2, approved by BR on 2026-11-07 with adjustments (section M2). M0 T0/T1/T2 and the research spikes started 2026-11-07.** Defaults BR did not object to: T3 opens on the first conference day until 2026-11-30, then today; T8 keeps the CLI and deletes `/copilot`; T7's real cancel waits for BR's go on the day; M2a spend cap USD 20. v1 (the UX overhaul) is now Milestone 0 of this roadmap.
+Status: **v2.2, approved by BR on 2026-11-07 with adjustments (section M2). M0 T0/T1/T2 merged to main 2026-11-07 (PRs #1–#3, Codex MERGE on each, verified on BR's account); research memos in `docs/research/`; wave 2 (T3, T4, T5, T10) dispatched 2026-11-07.** Defaults BR did not object to: T3 opens on the first conference day until 2026-11-30, then today; T8 keeps the CLI and deletes `/copilot`; T7's real cancel waits for BR's go on the day; M2a spend cap USD 20. v1 (the UX overhaul) is now Milestone 0 of this roadmap.
 
 ## 1. What BR wants (his words, condensed; the roadmap must not drift from these)
 
