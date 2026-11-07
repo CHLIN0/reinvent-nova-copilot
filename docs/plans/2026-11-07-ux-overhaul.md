@@ -1,94 +1,119 @@
-# Plan: make re:Invent Nova Copilot something an attendee wants to use
+# Roadmap: re:Invent Nova Copilot (post-submission)
 
-Status: **draft for BR's review, 2026-11-07**. Nothing below is started. Hackathon submission is done (2026-11-06 23:50 PST); this is the post-submission overhaul.
+Status: **v2 draft for BR's review, 2026-11-07**. Nothing is started. v1 (the UX overhaul) is now Milestone 0 of this roadmap.
 
-## 1. Goal (BR's words, condensed)
+## 1. What BR wants (his words, condensed; the roadmap must not drift from these)
 
-One system where the official API, route planning and AI advice are one flow: intuitive, highly available, and worth coming back to. Remove or transform what does not earn its place. No decoration, no speculative features.
+| # | Expectation | Where it lands |
+|---|---|---|
+| E1 | An AI agent that understands my situation, arranges my schedule and recommends; I can *see* how it filtered, and get more ways to understand re:Invent so I can plan precisely | M0 (correctness), M1 (explainable recommendations, exploration views) |
+| E2 | Consider Amazon Bedrock AgentCore for the agent; record all costs | M2 (spike first, then decide), cost ledger from M0 |
+| E3 | 3D and route planning because of the many buildings and landmarks; indoor routes if possible | M3 (indoor feasibility spike, then build what the data allows) |
+| E4 | Multi-user / team: explore, but pending | Parked list (no work until BR unparks) |
+| E5 | Cloud deployment so users can use it themselves; open source with a license | M4 (deployment spike on the sign-in constraint, then build); license already MIT |
+| E6 | BR's role: host the project, dispatch to Opus 5.5 sessions and Codex (gpt-6.1-sol), no drift, nothing meaningless | Section 6 |
 
-Success looks like: an attendee signs in once, sees *their* re:Invent (not a 2,471-session catalog), asks for help in plain language, gets a plan that respects every reservation and limit they have, commits it with one click per session, and on the next visit is told what changed and what to do about it. All of that works in a browser with site storage blocked, after a server restart, and after the token expires.
+## 2. Hard constraints and facts to re-verify
 
-## 2. What the walkthrough found (2026-11-07 00:00 PST, BR's Chrome, signed in, real catalog)
+| Constraint | Source | Effect on the roadmap |
+|---|---|---|
+| The Events API sign-in is OAuth PKCE with a **loopback redirect only** (127.0.0.1:8484–8489); no hosted redirect URI as of the 2026-10-26 reading of the docs | Codex research 10/26; `docs/research/official-api` in event-atlas | A hosted web app cannot sign users in by itself today. M4 starts with a spike to re-read the docs and test the options (local helper, device-style flow, or ask AWS). Until then, "cloud" means hosting everything except the sign-in. |
+| The API has no floor plans, rooms-to-coordinates, or indoor graph | Same docs | Indoor routing needs another data source. M3 starts with a spike on what exists legally (venue maps, OSM indoor tags, official app) before any build. |
+| Bedrock Nova Pro is the model; AgentCore is a candidate runtime | BR | M2 spike measures cost and latency of the *same* agent on AgentCore vs. direct Converse before any migration. No rewrite without numbers. |
+| BR's Chrome blocks site storage for this origin | Walkthrough 11-07 | All state lives on the server (M0 T1). |
 
-| # | Observation | Evidence | Why it matters |
-|---|---|---|---|
-| P1 | **Browser storage is denied** in BR's Chrome for this origin: IndexedDB `UnknownError: The user denied permission`, `localStorage` `SecurityError`. Atlas shows "無法安全儲存本機安排" and "我的安排 0" right next to a banner saying "9 reserved". | JS probe in the page | Every plan feature that lives in the browser is dead for this user. Availability requirement fails on day one. |
-| P2 | **First screen is the whole catalog**: 2,471 sessions, first cards are "Wishing Booths", "Breakfast", "Hydrate & Help". Reserved sessions are not distinguished. The attendee's own day is invisible. | Screenshot 00:00 | The product answers "what exists" instead of "what is my day". |
-| P3 | **Planner ignored real reservations.** Asked to plan Wednesday "around my reserved sessions, keep my reservations", Nova Pro called `plan_itinerary` without `must`; the plan overlaps GHJ315 (08:00–10:00) and DVT415-R2 (10:30–11:30). | Tool trace in the panel | A plan that double-books the attendee is worse than no plan. Correctness cannot depend on the model remembering a parameter. |
-| P4 | **Briefing claimed "feasible, no conflicts"** after only `get_profile` + `get_my_schedule`; it never called `check_itinerary`. | Tool trace | Unverified claim presented as checked. Violates the project's own rule. |
-| P5 | **Answer noise**: 20+ dropped codes dumped inline, arbitrary `max_sessions: 4`, long prose in a narrow panel, occasional Markdown asterisks. | Screenshot 00:01 | Hard to scan; the useful part (4 sessions, 2 transitions) is buried. |
-| P6 | **Three "plans"** (Atlas 我的安排, Copilot "Your day", official schedule), two sign-in buttons, sync by page reload, Copilot hidden behind a corner button. | UI | The attendee has to understand our architecture to use the app. |
-| P7 | **Restart = silent sign-out**; token lasts 60 min with no warning. | Server behaviour | Confusing failure with no explanation. |
-| P8 | Duplicates: `/copilot` chat-only page, CLI, two login paths, briefing text repeated in chat. | Code | Surface area without users. |
-| What works | Sign-in; official schedule read-back (9 reserved, 5 favorites, codes/titles/rooms resolved); real-catalog search and routing; RSVP/favorite cards; data-driven calendar hours; tool trace. | Walkthrough | Keep. |
+## 3. Milestones
 
-## 3. Non-goals (explicitly out)
+### M0 · Correct and usable (the v1 overhaul; 9 tasks, unchanged)
+T1 server-side state · T2 reservations locked in code · T3 signed-in first screen = my re:Invent · T4 panel-sized answers · T5 token/restart handling · T6 new/changed sessions since last visit · T7 RSVP lifecycle · T8 remove duplicates · T9 reliability gate. Acceptance criteria and must-nots are in section 5. Plus **T0 · cost ledger**: every Bedrock call logs model, input/output tokens and estimated USD to `local-private/costs.jsonl`; `docs/costs.md` summarises per feature. This starts in M0 so M2 has a baseline.
 
-Indoor routing; multi-user or team features; cloud deployment; other LLMs; changes to the 3D map; new visual styling beyond what a task needs; anything not traceable to a row in section 2 or a goal in section 1.
+### M1 · Explainable recommendations and more ways to explore (E1)
+- **M1a Filter trace**: every recommendation shows the chain: profile facts used → search filters → candidates → feasibility checks → chosen/dropped with reasons. One click from the answer. The attendee can edit a filter (day, level, venue, walking limit) and the plan recomputes without re-asking the model.
+- **M1b Compare plans**: for one day, two or three alternatives side by side (depth-first / fewest steps / explore adjacent topics) with the same columns: sessions, travel, slack, steps, what you give up.
+- **M1c Exploration views on the catalog** (in Atlas's Explore tab): by goal ("bring back an agent security approach"), by level progression, by venue-day heatmap, by "related to what I reserved". Each view is a query over the same catalog with a visible definition.
+- Acceptance: a judge-style test: for any plan, every line can be traced to a tool result in the trace view; changing a filter updates the plan in under 2 s without a model call.
+- Must not: new model calls per view; embeddings unless M1c proves a need with examples.
 
-## 4. Tasks (one session each, Opus 5.5, own branch, PR to `main`)
+### M2 · Agent runtime and cost (E2)
+- **M2a Spike (2 days)**: deploy the existing agent to Bedrock AgentCore Runtime in us-east-1 (plus AgentCore Memory for the profile and Gateway for the tools, if that is how the service is shaped at the time); run the same 8-scenario battery on both paths; record latency, tokens, USD, and operational differences. Output: a decision memo with numbers.
+- **M2b Decide**: migrate only if the memo shows a benefit the attendee feels (reliability, latency, memory across sessions) at a cost BR accepts. Otherwise stay on direct Converse and keep the memo as the record.
+- Cost ledger stays either way.
 
-Each task has an owner session, acceptance criteria that a reviewer can check, and a "must not" list to prevent drift. Order matters: T1 and T2 are foundations.
+### M3 · Space: 3D, landmarks, indoor (E3)
+- **M3a Spike (2 days)**: what indoor and landmark data exists and may be used: official venue maps and their terms, OSM indoor tags for the six venues, public floor plans; and what the official app exposes. Output: a data-availability memo with a yes/partial/no per venue.
+- **M3b Build what the data allows**: at minimum, room-level venue positions and entrance choice ("enter Caesars Forum from the north entrance for Forum 110") on the existing 3D scene; indoor paths only for venues with usable data, labelled as such; never invented.
+- Acceptance: a route answer names the entrance and, where data exists, the floor; the 3D scene highlights the venues and route of the selected plan.
+
+### M4 · Cloud and open source (E5)
+- **M4a Spike (1 day)**: re-read the sign-in docs; test whether a hosted app can complete Builder ID sign-in (hosted redirect, device flow, or a local helper). Output: a memo with the one viable path, or "not possible today".
+- **M4b Build**: the hosted deployment on the viable path (container on AWS, per-user server-side state, secrets in a managed store, cost ledger per user); the repo stays open source under MIT with a CONTRIBUTING and a clear "run it yourself" path.
+- Acceptance: a second person signs in and plans their own day without BR's machine.
+
+### Parked (E4, by BR's decision)
+Team planning, shared plans, consent model. Documented as a parked list; no work.
+
+## 4. Order and parallelism
+
+M0 first (T0+T1+T2 → T3+T4+T5 → T6+T7+T8 → T9). The three spikes (M2a, M3a, M4a) can run in parallel with M0's second wave because they are read-and-measure work that touches no product code. M1 starts after M0 T3. M2b/M3b/M4b start only after BR reads the memos.
+
+## 5. M0 task details (acceptance and must-nots)
+
+### T0 · Cost ledger
+- Log every Bedrock call (model, input/output tokens, estimated USD, feature tag) to `local-private/costs.jsonl`; `docs/costs.md` with a per-feature summary and the price table used, dated.
+- Acceptance: after the scenario battery, `docs/costs.md` shows cost per scenario.
 
 ### T1 · State lives on the server (fixes P1, P6)
-- Replace Atlas's browser plan store with a server plan: `GET/POST /api/plan` backed by `local-private/profiles/<name>.state.json`. The plan = official reservations + official favorites (read from `GetSchedule`) + local picks, with a `source` per item.
-- Atlas reads the plan from the server and renders it; "我的安排" shows reserved/favorite/local with distinct marks. Filters live in the URL hash only; no localStorage.
-- Copilot's "add to plan" writes to the same endpoint; no page reload.
-- **Acceptance**: with site data blocked in Chrome, "我的安排" shows 9 reserved and 5 favorites; no storage error is ever rendered; adding a session from Copilot appears in the calendar without reload.
-- **Must not**: add a database; change the 3D map; touch `explorer/ui` beyond the plan store and its consumers.
+- Replace Atlas's browser plan store with `GET/POST /api/plan` backed by `local-private/profiles/<name>.state.json`. The plan = official reservations + favorites (from `GetSchedule`) + local picks, each with a `source`.
+- Atlas renders the plan from the server; "我的安排" marks reserved/favorite/local differently. Filters live in the URL hash only. Copilot's "add to plan" writes the same endpoint; no page reload.
+- Acceptance: with site data blocked in Chrome, "我的安排" shows 9 reserved and 5 favorites; no storage error ever rendered; adding from Copilot appears without reload.
+- Must not: add a database; change the 3D map; touch `explorer/ui` beyond the plan store and its consumers.
 
 ### T2 · Reservations are locked in code (fixes P3, P4)
-- `plan_itinerary` and `check_itinerary` automatically load the official schedule when signed in: reserved sessions are `must`, their times are blocked, favorites are candidates with priority. The model cannot omit them.
-- The briefing calls `check_itinerary` per conference day before saying anything about feasibility; if the tool was not called, the server strips feasibility claims from the text.
-- **Acceptance**: the Wednesday case from the walkthrough yields no suggested session overlapping GHJ315, DVT415-R2 or SEC407-R1; offline test with a fixture schedule; scenario battery asserts `check_itinerary` appears in every briefing trace.
-- **Must not**: change the routing algorithm; add new tools beyond what exists.
+- When signed in, `plan_itinerary` / `check_itinerary` load the official schedule themselves: reserved = `must` + blocked windows; favorites = priority candidates. The model cannot omit them.
+- The briefing calls `check_itinerary` per conference day before any feasibility statement; if it did not, the server strips feasibility claims from the text.
+- Acceptance: the Wednesday case yields no suggestion overlapping GHJ315, DVT415-R2 or SEC407-R1; offline fixture test; battery asserts `check_itinerary` in every briefing trace.
+- Must not: change routing; add tools.
 
-### T3 · Signed-in first screen = "My re:Invent" (fixes P2, P6)
-- After sign-in: open on the first conference day (or today during the event) in day view, reserved sessions highlighted, gaps between them marked, Copilot's briefing shown at the top of the page, not behind a corner button.
-- Catalog browsing becomes a second tab ("Explore"); filters collapsed by default.
-- One sign-in control; the Copilot panel is a persistent side panel with a toggle, not a floating button.
-- **Acceptance**: screenshot in BR's Chrome: first paint shows BR's Monday with CMP321-R, INV538, GHJ308-S-R and the gaps; no breakfast/booth cards unless Explore is opened.
-- **Must not**: redesign colours/typography; remove the five-day view; add animations.
-- Depends on T1.
+### T3 · Signed-in first screen = "My re:Invent" (fixes P2, P6; depends on T1)
+- After sign-in: first conference day (today during the event) in day view, reserved sessions highlighted, gaps marked, briefing at the top of the page. Catalog browsing = "Explore" tab, filters collapsed. One sign-in control; Copilot is a persistent side panel with a toggle.
+- Acceptance: screenshot in BR's Chrome: first paint shows BR's Monday (CMP321-R, INV538, GHJ308-S-R) and the gaps; no breakfast/booth cards unless Explore is opened.
+- Must not: restyle; remove the five-day view; add animations.
 
 ### T4 · Answers that fit a panel (fixes P5)
-- Prompt + server post-processing: plan answers = lines for leave hotel / sessions / back; transitions as one line each; dropped list collapsed to "N dropped (3 shown)"; no Markdown symbols; yes/no questions answered in the first sentence; `max_sessions` derived from the day's free windows, not guessed.
-- **Acceptance**: scenario battery of 8 real-catalog questions; each answer ≤ 160 words, first sentence rule checked by test, no `**`.
-- **Must not**: change tool contracts; add new tools.
+- Plan answers = lines for leave hotel / sessions / back; one line per transition; dropped list collapsed to "N dropped (3 shown)"; no Markdown symbols; yes/no questions answered in the first sentence; `max_sessions` derived from free windows.
+- Acceptance: 8-question real-catalog battery; each answer ≤ 160 words; first-sentence rule and no `**` checked by test.
+- Must not: change tool contracts.
 
 ### T5 · Sessions that survive time (fixes P7)
-- Token expiry shown ("signed in, 42 min left"), re-sign-in prompt before expiry, refresh token used where the API allows; on server restart the page says why it is signed out.
-- **Acceptance**: manual test: wait past expiry → one click restores; restart → clear message.
-- **Must not**: persist tokens to disk.
+- Token expiry shown, re-sign-in prompt before expiry, refresh token where allowed; restart message explains the sign-out.
+- Must not: persist tokens to disk.
 
-### T6 · New and changed sessions since last visit (BR's requirement, not yet built)
-- Server keeps a catalog snapshot per profile: session id → (start, end, room, abstract hash). On each visit: new ids, moved reserved sessions, cancelled reserved sessions. Briefing reports them; new sessions matching profile interests are recommended with codes.
-- **Acceptance**: fixture test with a modified catalog; briefing names the new session and the moved reservation.
-- Depends on T1.
+### T6 · New and changed sessions since last visit (E1; depends on T1)
+- Server-side catalog snapshot per profile (id → start, end, room, abstract hash). Each visit: new ids, moved or cancelled reserved sessions. Briefing reports them; new sessions matching interests are recommended with codes.
+- Acceptance: fixture test with a modified catalog; briefing names the new session and the moved reservation.
 
 ### T7 · RSVP lifecycle
-- Cancel reservation with the same confirm → official call → read-back; seat status shown on cards; result codes in plain words.
-- **Acceptance**: offline test; one real cancel+re-reserve on a low-stakes session, with BR's go-ahead.
+- Cancel reservation with confirm → official call → read-back; seat status on cards; result codes in plain words.
+- Acceptance: offline test; one supervised real cancel + re-reserve on a low-stakes session, with BR's go-ahead.
 
 ### T8 · Remove duplicates (fixes P8)
-- Delete `/copilot` chat-only page and its `web/index.html`; keep CLI (`chat.py`) for judges and tests; one sign-in path; one place where the plan is shown.
-- **Acceptance**: `git grep` shows no dead routes; README updated.
+- Delete `/copilot` chat-only page; keep CLI for judges and tests; one sign-in path; one place where the plan is shown.
 
 ### T9 · Reliability gate
-- Scenario battery (offline, mocked Bedrock) runs in CI; error states (401/403/429, Bedrock unavailable) render user-facing text; `python3 -m unittest` green.
+- Offline scenario battery in CI; user-facing text for 401/403/429 and Bedrock unavailable; `unittest` green.
 
-## 5. How the work runs
+## 6. How the work runs
 
-1. **Host (this session)** writes one brief per task from this file, starts one Opus 5.5 session per task in its own worktree, three in parallel at most, in the order T1+T2 → T3+T4+T5 → T6+T7+T8 → T9.
-2. Each session ends with a PR to `main`, its tests, and (for UI tasks) a screenshot from a real run.
-3. **Review gate, every PR**: Codex review with `gpt-6.1-sol` against a fixed checklist: scope equals the task's acceptance and nothing else; no speculative abstraction; no new dependency; tests present and meaningful; no secrets or local paths; UI claims backed by a screenshot. Findings go back to the session; the host re-checks the fix.
-4. **Host verification before merge**: the host runs the branch and checks the acceptance criteria in BR's Chrome (signed in), then merges sequentially and rebases the next branch.
-5. **BR's gates**: approve this plan (sections 1–4); approve any real write to the official schedule (T7); approve removals (T8).
-6. Usage check before each fan-out (rule in execution-routing). Codex availability is verified before the first PR (the 2026-11-06 review did not return within 20 minutes).
+1. **Host (this session)**: owns this roadmap and the order; writes one brief per task from this file; starts one session per task in its own worktree, at most three in parallel; verifies acceptance in BR's Chrome before merging; merges sequentially.
+2. **Builders**: Claude Code sessions on Opus 5.5 for product code; Codex (gpt-6.1-sol) for spikes and research memos, and for development tasks the host assigns it (same brief format, same PR rules). Never GPT-6 Astra without BR's say.
+3. **Review gate on every PR**: Codex review (gpt-6.1-sol) with a fixed checklist: scope equals the task's acceptance and nothing more; no speculative abstraction; no new dependency without a line in the brief; tests present and meaningful; no secrets or local paths; UI claims backed by a screenshot; cost ledger entries present for any new model call.
+4. **BR's gates**: approve this roadmap; read each spike memo before its build starts; approve real writes to the official schedule (T7); approve removals (T8); approve any spend above the ledger's running estimate.
+5. **Hygiene**: usage check before each fan-out; Codex availability verified before the first PR; every merge updates `docs/costs.md` if a model call changed.
 
-## 6. Open questions for BR
+## 7. Decisions for BR
 
-1. T3: default to the first conference day, or to "today" once the event starts? (Proposal: first day until 2026-11-30, then today.)
-2. T8: delete `/copilot` and the CLI, or keep the CLI for judges and tests? (Proposal: keep CLI, delete `/copilot`.)
-3. T7: cancel-reservation is a real write; is one supervised test on a low-stakes session acceptable?
-4. Anything in section 2 you disagree with, or a pain point I did not see?
+1. Approve the milestone order (M0 → spikes in parallel with M0's second wave → M1 → builds after memos)?
+2. T3 default day: first conference day until 2026-11-30, then today?
+3. T8: delete `/copilot`, keep CLI?
+4. T7: one supervised real cancel + re-reserve on a low-stakes session?
+5. Spend ceiling for the M2a AgentCore spike (proposal: stop and report at USD 20)?
