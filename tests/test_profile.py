@@ -56,6 +56,16 @@ class ProfileTests(unittest.TestCase):
         self.assertIn("back to the hotel", reasons)
         self.assertIn("blocked time", reasons)
 
+    def test_route_depart_at_is_checked_against_event_week(self):
+        bad, ok = tools.dispatch("route_between", {"from_venue": "wynn", "to_venue": "mgm_grand",
+                                                   "depart_at": "2023-11-28T10:00:00"})
+        self.assertFalse(ok)
+        self.assertIn("outside re:Invent 2026", bad["error"])
+        good, ok = tools.dispatch("route_between", {"from_venue": "wynn", "to_venue": "mgm_grand",
+                                                    "depart_at": "Tue 10:00"})
+        self.assertTrue(ok)
+        self.assertTrue(good["route"]["depart_at"].startswith("2026-12-01T10:00"))
+
     def test_profile_name_is_sanitised(self):
         self.assertEqual(profile._safe_name("../../etc"), "etc")
 

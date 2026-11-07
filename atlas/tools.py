@@ -51,7 +51,7 @@ TOOL_SPECS: list[dict[str, Any]] = [
             "properties": {
                 "from_venue": {"type": "string", "description": "Venue key, e.g. venetian."},
                 "to_venue": {"type": "string", "description": "Venue key, e.g. mandalay_bay."},
-                "depart_at": {"type": "string", "description": "Optional ISO 8601 departure time."},
+                "depart_at": {"type": "string", "description": "Optional departure time in Las Vegas time: 'Tue 10:00' or ISO 8601 like 2026-12-01T10:00:00-08:00. re:Invent 2026 runs Mon 2026-11-30 to Fri 2026-12-04."},
                 "prefer": _PREFER,
             },
             "required": ["from_venue", "to_venue"],
@@ -186,6 +186,13 @@ def _resolve(be: Backend, ids: list[str]) -> tuple[list[dict], list[str]]:
 
 def _call(name: str, args: dict, be: Backend) -> Any:
     if name == "search_sessions":
+        import re
+
+        words = [args.get("query") or ""] + list(args.get("topics") or [])
+        codes = {c.upper() for w in words for c in re.findall(r"\b[A-Za-z]{2,4}(?:-[A-Za-z]{2,4})?\d{3}[A-Za-z]?\b", w)}
+        exact = [s for s in (be.get_session(c) for c in sorted(codes)) if s]
+        if exact:  # the attendee named session codes: return those sessions directly
+            return {"count": len(exact), "sessions": [_brief(s) for s in exact], "matched_by": "session code"}
         kw = {k: args[k] for k in ("query", "types", "levels", "topics", "day", "venue") if args.get(k)}
         kw["limit"] = int(args.get("limit") or 10)
         rows = be.search_sessions(**kw)
@@ -198,7 +205,7 @@ def _call(name: str, args: dict, be: Backend) -> Any:
     if name == "route_between":
         kw = {"prefer": args.get("prefer") or "fastest"}
         if args.get("depart_at"):
-            kw["depart_at"] = args["depart_at"]
+            kw["depart_at"] = _event_time(args["depart_at"])
         return {"route": be.route(args["from_venue"], args["to_venue"], **kw)}
     if name == "check_itinerary":
         sessions, missing = _resolve(be, args.get("session_ids", []))
@@ -306,6 +313,32 @@ def _apply_time_limits(be: Backend, sessions: list[dict], args: dict, must_ids: 
         else:
             keep.append(s)
     return keep, dropped
+
+
+EVENT_DAYS = {"mon": "2026-11-30", "tue": "2026-12-01", "wed": "2026-12-02", "thu": "2026-12-03", "fri": "2026-12-04"}
+
+
+def _event_time(value: str) -> str:
+    """Accept 'Tue 10:00', 'HH:MM' or ISO; return ISO in Las Vegas time inside re:Invent 2026 week, else ToolError."""
+    import re
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    lv = ZoneInfo("America/Los_Angeles")
+    v = value.strip()
+    m = re.fullmatch(r"(?i)(mon|tue|wed|thu|fri)[a-z]*\s+(\d{1,2}):(\d{2})", v)
+    if m:
+        dt = datetime.fromisoformat(f"{EVENT_DAYS[m.group(1).lower()]}T{int(m.group(2)):02d}:{m.group(3)}:00").replace(tzinfo=lv)
+    else:
+        try:
+            dt = datetime.fromisoformat(v.replace("Z", "+00:00"))
+        except ValueError as e:
+            raise ToolError(f"depart_at {value!r} is not a time. Use ISO 8601 like 2026-12-01T10:00:00-08:00 or 'Tue 10:00'.") from e
+        dt = dt.replace(tzinfo=lv) if dt.tzinfo is None else dt.astimezone(lv)
+    if not ("2026-11-29" <= dt.date().isoformat() <= "2026-12-05"):
+        raise ToolError(f"depart_at {value!r} is outside re:Invent 2026 (Mon 2026-11-30 to Fri 2026-12-04, Las Vegas time). "
+                        "Use e.g. 2026-12-01T10:00:00-08:00 for Tuesday 10:00.")
+    return dt.isoformat()
 
 
 def _home_base_travel(be: Backend, plan: dict, prefer: str) -> dict | None:
