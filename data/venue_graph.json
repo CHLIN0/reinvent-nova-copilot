@@ -1,0 +1,64 @@
+{
+  "_about": "Venue transfer graph for re:Invent Nova Copilot. ESTIMATES ONLY, not official wayfinding. Venue lat/lon = vertex mean of the OpenStreetMap footprint (event-atlas campus.json, (c) OpenStreetMap contributors, ODbL); monorail station lat/lon are public approximate positions. Walk minutes, shuttle routes, headways and service hours are modelling assumptions: confirm in the official re:Invent app before relying on them. Edit this file to correct them; routing.py loads it at import time.",
+  "venues": {
+    "venetian":       {"name": "The Venetian / Palazzo / Venetian Expo", "lat": 36.12159, "lon": -115.16959, "osm": "event-atlas venue_id=venetian", "intra_minutes": 10},
+    "wynn":           {"name": "Wynn Las Vegas", "lat": 36.12658, "lon": -115.16555, "osm": "event-atlas venue_id=wynn", "intra_minutes": 6},
+    "encore":         {"name": "Encore Las Vegas", "lat": 36.12873, "lon": -115.16486, "osm": "event-atlas venue_id=encore", "intra_minutes": 6},
+    "caesars_forum":  {"name": "Caesars Forum", "lat": 36.11879, "lon": -115.16624, "osm": "event-atlas venue_id=forum", "intra_minutes": 6},
+    "caesars_palace": {"name": "Caesars Palace", "lat": 36.11659, "lon": -115.17565, "osm": "event-atlas venue_id=palace", "intra_minutes": 8},
+    "mgm_grand":      {"name": "MGM Grand (Conference Center)", "lat": 36.10448, "lon": -115.16504, "osm": "event-atlas venue_id=mgm (conference center footprint)", "intra_minutes": 8},
+    "mandalay_bay":   {"name": "Mandalay Bay", "lat": 36.09183, "lon": -115.17482, "osm": "OSM way/27858550 (Mandalay Bay Resort & Casino footprint; not tagged in event-atlas)", "intra_minutes": 10}
+  },
+  "stations": {
+    "mono:mgm_grand":        {"name": "Monorail MGM Grand station", "lat": 36.1027, "lon": -115.1660},
+    "mono:horseshoe_paris":  {"name": "Monorail Horseshoe/Paris station", "lat": 36.1129, "lon": -115.1680},
+    "mono:flamingo_caesars": {"name": "Monorail Flamingo/Caesars Palace station", "lat": 36.1162, "lon": -115.1676},
+    "mono:harrahs_linq":     {"name": "Monorail Harrah's/The LINQ station", "lat": 36.1196, "lon": -115.1677}
+  },
+  "defaults": {
+    "walk_m_per_min": 75,
+    "steps_per_walk_min": 100,
+    "walk_detour_factor": 1.3,
+    "door_to_shuttle_min": 4,
+    "shuttle_kmh": 18,
+    "road_factor": 1.5,
+    "shuttle_board_min": 3,
+    "shuttle_headway_min": 15,
+    "shuttle_first": "06:30",
+    "shuttle_last": "22:00",
+    "monorail_headway_min": 6,
+    "monorail_first": "07:00",
+    "monorail_last": "23:59",
+    "rideshare_pickup_wait_min": 10,
+    "rideshare_kmh": 15,
+    "rideshare_zone_walk_min": 8
+  },
+  "walk": [
+    {"a": "venetian", "b": "wynn", "minutes": 10},
+    {"a": "wynn", "b": "encore", "minutes": 6},
+    {"a": "venetian", "b": "caesars_forum", "minutes": 15},
+    {"a": "caesars_forum", "b": "caesars_palace", "minutes": 15},
+    {"a": "mgm_grand", "b": "mandalay_bay", "minutes": 30}
+  ],
+  "station_walk": [
+    {"venue": "mgm_grand", "station": "mono:mgm_grand", "minutes": 6},
+    {"venue": "caesars_forum", "station": "mono:harrahs_linq", "minutes": 8},
+    {"venue": "caesars_palace", "station": "mono:flamingo_caesars", "minutes": 12},
+    {"venue": "venetian", "station": "mono:harrahs_linq", "minutes": 15}
+  ],
+  "monorail": [
+    {"a": "mono:mgm_grand", "b": "mono:horseshoe_paris", "minutes": 4},
+    {"a": "mono:horseshoe_paris", "b": "mono:flamingo_caesars", "minutes": 2},
+    {"a": "mono:flamingo_caesars", "b": "mono:harrahs_linq", "minutes": 2}
+  ],
+  "shuttle": [
+    {"a": "venetian", "b": "mandalay_bay"},
+    {"a": "venetian", "b": "mgm_grand"},
+    {"a": "venetian", "b": "caesars_forum"},
+    {"a": "venetian", "b": "encore"},
+    {"a": "venetian", "b": "caesars_palace"},
+    {"a": "mgm_grand", "b": "mandalay_bay"},
+    {"a": "caesars_forum", "b": "mandalay_bay"},
+    {"a": "caesars_forum", "b": "mgm_grand"}
+  ]
+}

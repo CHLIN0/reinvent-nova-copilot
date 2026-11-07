@@ -1,0 +1,1194 @@
+{
+  "synthetic": true,
+  "note": "SYNTHETIC demo data written from scratch for offline use. Not the official re:Invent catalog: titles, codes, times, rooms and speakers are invented. Live data comes only from the official AWS Events API after sign-in.",
+  "event": "re:Invent 2026 (synthetic)",
+  "timezone": "America/Los_Angeles",
+  "sessions": [
+    {
+      "id": "syn-0001",
+      "code": "SYN-AI101",
+      "title": "Designing multi-step agents that know when to stop",
+      "abstract": "Patterns for bounding tool-use loops, budgeting tokens and returning partial answers safely. (Synthetic demo session.)",
+      "type": "Breakout",
+      "level": "100",
+      "topics": [
+        "AI/ML",
+        "Agents"
+      ],
+      "start": "2026-11-30T09:00:00-08:00",
+      "end": "2026-11-30T10:00:00-08:00",
+      "venue": "venetian",
+      "room": "Level 3, Synthetic Room 100",
+      "seats": "available",
+      "speakers": [
+        "Demo Speaker 1"
+      ]
+    },
+    {
+      "id": "syn-0002",
+      "code": "SYN-AI202",
+      "title": "Agent memory: short-term scratchpads vs long-term stores",
+      "abstract": "Compare in-context notes, vector recall and structured profiles for agent memory. (Synthetic demo session.)",
+      "type": "Builders' session",
+      "level": "200",
+      "topics": [
+        "AI/ML",
+        "Agents"
+      ],
+      "start": "2026-12-01T09:00:00-08:00",
+      "end": "2026-12-01T10:00:00-08:00",
+      "venue": "mandalay_bay",
+      "room": "South Convention, Room 113",
+      "seats": "limited",
+      "speakers": [
+        "Demo Speaker 2"
+      ]
+    },
+    {
+      "id": "syn-0003",
+      "code": "SYN-AI303",
+      "title": "Building your first MCP server in an afternoon",
+      "abstract": "Expose an internal API as MCP tools and connect it to an assistant. (Synthetic demo session.)",
+      "type": "Workshop",
+      "level": "300",
+      "topics": [
+        "AI/ML",
+        "Agents",
+        "MCP"
+      ],
+      "start": "2026-12-02T09:00:00-08:00",
+      "end": "2026-12-02T11:00:00-08:00",
+      "venue": "mgm_grand",
+      "room": "Grand Ballroom 126",
+      "seats": "veryLimited",
+      "speakers": [
+        "Demo Speaker 3"
+      ]
+    },
+    {
+      "id": "syn-0004",
+      "code": "SYN-AI404",
+      "title": "Evaluating agents with replayable traces",
+      "abstract": "Record tool calls, replay them offline and score agent behaviour over time. (Synthetic demo session.)",
+      "type": "Code talk",
+      "level": "400",
+      "topics": [
+        "AI/ML",
+        "Agents"
+      ],
+      "start": "2026-12-03T09:00:00-08:00",
+      "end": "2026-12-03T10:00:00-08:00",
+      "venue": "caesars_forum",
+      "room": "Forum Hall 139",
+      "seats": "walkUp",
+      "speakers": [
+        "Demo Speaker 4"
+      ]
+    },
+    {
+      "id": "syn-0005",
+      "code": "SYN-AI205",
+      "title": "Multi-agent handoffs without the chaos",
+      "abstract": "Supervisor, swarm and pipeline topologies and when each one fails. (Synthetic demo session.)",
+      "type": "Chalk talk",
+      "level": "200",
+      "topics": [
+        "AI/ML",
+        "Agents",
+        "Generative AI"
+      ],
+      "start": "2026-11-30T10:30:00-08:00",
+      "end": "2026-11-30T11:30:00-08:00",
+      "venue": "encore",
+      "room": "Encore Ballroom 152",
+      "seats": "unavailable",
+      "speakers": [
+        "Demo Speaker 5"
+      ]
+    },
+    {
+      "id": "syn-0006",
+      "code": "SYN-AI306",
+      "title": "Guardrails for agents that can take actions",
+      "abstract": "Confirmation steps, scoped credentials and audit logs for write-capable agents. (Synthetic demo session.)",
+      "type": "Breakout",
+      "level": "300",
+      "topics": [
+        "AI/ML",
+        "Agents"
+      ],
+      "start": "2026-12-01T10:30:00-08:00",
+      "end": "2026-12-01T11:30:00-08:00",
+      "venue": "wynn",
+      "room": "Convention Promenade, Room 165",
+      "seats": "available",
+      "speakers": [
+        "Demo Speaker 6"
+      ]
+    },
+    {
+      "id": "syn-0007",
+      "code": "SYN-AI407",
+      "title": "Running agents on serverless: cold starts and long tasks",
+      "abstract": "Strategies for agents that outlive a single function invocation. (Synthetic demo session.)",
+      "type": "Builders' session",
+      "level": "400",
+      "topics": [
+        "AI/ML",
+        "Agents",
+        "Serverless"
+      ],
+      "start": "2026-12-02T10:30:00-08:00",
+      "end": "2026-12-02T11:30:00-08:00",
+      "venue": "wynn",
+      "room": "Convention Promenade, Room 178",
+      "seats": "limited",
+      "speakers": [
+        "Demo Speaker 7"
+      ]
+    },
+    {
+      "id": "syn-0008",
+      "code": "SYN-AI208",
+      "title": "Voice agents for field technicians",
+      "abstract": "A fictional utility company builds a hands-free troubleshooting assistant. (Synthetic demo session.)",
+      "type": "Workshop",
+      "level": "200",
+      "topics": [
+        "AI/ML",
+        "Agents",
+        "Generative AI"
+      ],
+      "start": "2026-12-03T10:30:00-08:00",
+      "end": "2026-12-03T12:30:00-08:00",
+      "venue": "venetian",
+      "room": "Level 3, Synthetic Room 111",
+      "seats": "veryLimited",
+      "speakers": [
+        "Demo Speaker 8"
+      ]
+    },
+    {
+      "id": "syn-0009",
+      "code": "SYN-AI309",
+      "title": "Tool schemas that models actually follow",
+      "abstract": "Naming, descriptions and argument design that reduce bad tool calls. (Synthetic demo session.)",
+      "type": "Code talk",
+      "level": "300",
+      "topics": [
+        "AI/ML",
+        "Agents"
+      ],
+      "start": "2026-11-30T12:00:00-08:00",
+      "end": "2026-11-30T13:00:00-08:00",
+      "venue": "mandalay_bay",
+      "room": "South Convention, Room 124",
+      "seats": "walkUp",
+      "speakers": [
+        "Demo Speaker 9"
+      ]
+    },
+    {
+      "id": "syn-0010",
+      "code": "SYN-AI410",
+      "title": "Remote MCP servers with OAuth: a hands-on build",
+      "abstract": "Add PKCE sign-in to a remote MCP server and test it end to end. (Synthetic demo session.)",
+      "type": "Chalk talk",
+      "level": "400",
+      "topics": [
+        "AI/ML",
+        "Agents",
+        "MCP"
+      ],
+      "start": "2026-12-01T12:00:00-08:00",
+      "end": "2026-12-01T13:00:00-08:00",
+      "venue": "mgm_grand",
+      "room": "Grand Ballroom 137",
+      "seats": "unavailable",
+      "speakers": [
+        "Demo Speaker 10"
+      ]
+    },
+    {
+      "id": "syn-0011",
+      "code": "SYN-GEN101",
+      "title": "Retrieval that survives messy PDFs",
+      "abstract": "Chunking, table extraction and citation checks for real-world documents. (Synthetic demo session.)",
+      "type": "Breakout",
+      "level": "100",
+      "topics": [
+        "Generative AI",
+        "AI/ML"
+      ],
+      "start": "2026-12-02T12:00:00-08:00",
+      "end": "2026-12-02T13:00:00-08:00",
+      "venue": "caesars_forum",
+      "room": "Forum Hall 150",
+      "seats": "available",
+      "speakers": [
+        "Demo Speaker 11"
+      ]
+    },
+    {
+      "id": "syn-0012",
+      "code": "SYN-GEN202",
+      "title": "Prompt caching in practice",
+      "abstract": "Measure latency and cost savings from caching long system prompts. (Synthetic demo session.)",
+      "type": "Builders' session",
+      "level": "200",
+      "topics": [
+        "Generative AI"
+      ],
+      "start": "2026-12-03T12:00:00-08:00",
+      "end": "2026-12-03T13:00:00-08:00",
+      "venue": "encore",
+      "room": "Encore Ballroom 163",
+      "seats": "limited",
+      "speakers": [
+        "Demo Speaker 12"
+      ]
+    },
+    {
+      "id": "syn-0013",
+      "code": "SYN-GEN403",
+      "title": "Grounding answers in your data warehouse",
+      "abstract": "Text-to-SQL with schema hints, validation and safe fallbacks. (Synthetic demo session.)",
+      "type": "Workshop",
+      "level": "400",
+      "topics": [
+        "Generative AI",
+        "Data"
+      ],
+      "start": "2026-11-30T13:30:00-08:00",
+      "end": "2026-11-30T15:30:00-08:00",
+      "venue": "encore",
+      "room": "Encore Ballroom 176",
+      "seats": "veryLimited",
+      "speakers": [
+        "Demo Speaker 13"
+      ]
+    },
+    {
+      "id": "syn-0014",
+      "code": "SYN-GEN104",
+      "title": "Fine-tune or prompt? A decision framework",
+      "abstract": "When small fine-tunes beat prompt engineering, with cost math. (Synthetic demo session.)",
+      "type": "Code talk",
+      "level": "100",
+      "topics": [
+        "Generative AI"
+      ],
+      "start": "2026-12-01T13:30:00-08:00",
+      "end": "2026-12-01T14:30:00-08:00",
+      "venue": "wynn",
+      "room": "Convention Promenade, Room 109",
+      "seats": "walkUp",
+      "speakers": [
+        "Demo Speaker 14"
+      ]
+    },
+    {
+      "id": "syn-0015",
+      "code": "SYN-GEN205",
+      "title": "Multimodal search over product images",
+      "abstract": "Embed images and text together for a fictional retail catalog. (Synthetic demo session.)",
+      "type": "Chalk talk",
+      "level": "200",
+      "topics": [
+        "Generative AI",
+        "AI/ML"
+      ],
+      "start": "2026-12-02T13:30:00-08:00",
+      "end": "2026-12-02T14:30:00-08:00",
+      "venue": "venetian",
+      "room": "Level 3, Synthetic Room 122",
+      "seats": "unavailable",
+      "speakers": [
+        "Demo Speaker 15"
+      ]
+    },
+    {
+      "id": "syn-0016",
+      "code": "SYN-GEN306",
+      "title": "Red-teaming your chatbot before launch",
+      "abstract": "Prompt injection, data leakage and jailbreak test suites. (Synthetic demo session.)",
+      "type": "Breakout",
+      "level": "300",
+      "topics": [
+        "Generative AI",
+        "Security"
+      ],
+      "start": "2026-12-03T13:30:00-08:00",
+      "end": "2026-12-03T14:30:00-08:00",
+      "venue": "mandalay_bay",
+      "room": "South Convention, Room 135",
+      "seats": "available",
+      "speakers": [
+        "Demo Speaker 16"
+      ]
+    },
+    {
+      "id": "syn-0017",
+      "code": "SYN-GEN107",
+      "title": "Structured output: JSON you can trust",
+      "abstract": "Schemas, retries and validators for reliable model output. (Synthetic demo session.)",
+      "type": "Builders' session",
+      "level": "100",
+      "topics": [
+        "Generative AI"
+      ],
+      "start": "2026-11-30T15:00:00-08:00",
+      "end": "2026-11-30T16:00:00-08:00",
+      "venue": "mgm_grand",
+      "room": "Grand Ballroom 148",
+      "seats": "limited",
+      "speakers": [
+        "Demo Speaker 17"
+      ]
+    },
+    {
+      "id": "syn-0018",
+      "code": "SYN-GEN208",
+      "title": "Choosing a foundation model by workload",
+      "abstract": "Latency, context length and price trade-offs across model families. (Synthetic demo session.)",
+      "type": "Workshop",
+      "level": "200",
+      "topics": [
+        "Generative AI",
+        "AI/ML"
+      ],
+      "start": "2026-12-01T15:00:00-08:00",
+      "end": "2026-12-01T17:00:00-08:00",
+      "venue": "caesars_forum",
+      "room": "Forum Hall 161",
+      "seats": "veryLimited",
+      "speakers": [
+        "Demo Speaker 18"
+      ]
+    },
+    {
+      "id": "syn-0019",
+      "code": "SYN-GEN309",
+      "title": "AI pair programming for legacy codebases",
+      "abstract": "Use coding assistants to map, test and refactor old services. (Synthetic demo session.)",
+      "type": "Code talk",
+      "level": "300",
+      "topics": [
+        "Generative AI",
+        "Developer tools"
+      ],
+      "start": "2026-12-02T15:00:00-08:00",
+      "end": "2026-12-02T16:00:00-08:00",
+      "venue": "caesars_forum",
+      "room": "Forum Hall 174",
+      "seats": "walkUp",
+      "speakers": [
+        "Demo Speaker 19"
+      ]
+    },
+    {
+      "id": "syn-0020",
+      "code": "SYN-GEN410",
+      "title": "Summarizing long meetings with citations",
+      "abstract": "Speaker-aware summaries that link every claim to a timestamp. (Synthetic demo session.)",
+      "type": "Chalk talk",
+      "level": "400",
+      "topics": [
+        "Generative AI"
+      ],
+      "start": "2026-12-03T15:00:00-08:00",
+      "end": "2026-12-03T16:00:00-08:00",
+      "venue": "encore",
+      "room": "Encore Ballroom 107",
+      "seats": "unavailable",
+      "speakers": [
+        "Demo Speaker 20"
+      ]
+    },
+    {
+      "id": "syn-0021",
+      "code": "SYN-SEC201",
+      "title": "Least privilege for machine identities",
+      "abstract": "Scope roles for CI, agents and workloads without slowing teams. (Synthetic demo session.)",
+      "type": "Breakout",
+      "level": "200",
+      "topics": [
+        "Security"
+      ],
+      "start": "2026-11-30T16:30:00-08:00",
+      "end": "2026-11-30T17:30:00-08:00",
+      "venue": "wynn",
+      "room": "Convention Promenade, Room 120",
+      "seats": "available",
+      "speakers": [
+        "Demo Speaker 21"
+      ]
+    },
+    {
+      "id": "syn-0022",
+      "code": "SYN-SEC302",
+      "title": "Detecting credential misuse in minutes",
+      "abstract": "Build alerts on unusual API patterns with managed threat detection. (Synthetic demo session.)",
+      "type": "Builders' session",
+      "level": "300",
+      "topics": [
+        "Security"
+      ],
+      "start": "2026-12-01T16:30:00-08:00",
+      "end": "2026-12-01T17:30:00-08:00",
+      "venue": "venetian",
+      "room": "Level 3, Synthetic Room 133",
+      "seats": "limited",
+      "speakers": [
+        "Demo Speaker 22"
+      ]
+    },
+    {
+      "id": "syn-0023",
+      "code": "SYN-SEC403",
+      "title": "Securing LLM applications end to end",
+      "abstract": "Input filtering, output checks and isolation for model-backed apps. (Synthetic demo session.)",
+      "type": "Workshop",
+      "level": "400",
+      "topics": [
+        "Security",
+        "Generative AI"
+      ],
+      "start": "2026-12-02T16:30:00-08:00",
+      "end": "2026-12-02T18:30:00-08:00",
+      "venue": "mandalay_bay",
+      "room": "South Convention, Room 146",
+      "seats": "veryLimited",
+      "speakers": [
+        "Demo Speaker 23"
+      ]
+    },
+    {
+      "id": "syn-0024",
+      "code": "SYN-SEC104",
+      "title": "Zero-trust access for internal tools",
+      "abstract": "Identity-aware proxies replacing VPNs for a fictional startup. (Synthetic demo session.)",
+      "type": "Code talk",
+      "level": "100",
+      "topics": [
+        "Security"
+      ],
+      "start": "2026-12-03T16:30:00-08:00",
+      "end": "2026-12-03T17:30:00-08:00",
+      "venue": "mgm_grand",
+      "room": "Grand Ballroom 159",
+      "seats": "walkUp",
+      "speakers": [
+        "Demo Speaker 24"
+      ]
+    },
+    {
+      "id": "syn-0025",
+      "code": "SYN-SEC305",
+      "title": "Encrypt everything, rotate everything",
+      "abstract": "Key hierarchies, envelope encryption and automatic rotation. (Synthetic demo session.)",
+      "type": "Chalk talk",
+      "level": "300",
+      "topics": [
+        "Security",
+        "Data"
+      ],
+      "start": "2026-11-30T09:00:00-08:00",
+      "end": "2026-11-30T10:00:00-08:00",
+      "venue": "mgm_grand",
+      "room": "Grand Ballroom 172",
+      "seats": "unavailable",
+      "speakers": [
+        "Demo Speaker 25"
+      ]
+    },
+    {
+      "id": "syn-0026",
+      "code": "SYN-SEC406",
+      "title": "Incident response game day",
+      "abstract": "Teams investigate a simulated breach using logs and runbooks. (Synthetic demo session.)",
+      "type": "Breakout",
+      "level": "400",
+      "topics": [
+        "Security"
+      ],
+      "start": "2026-12-01T09:00:00-08:00",
+      "end": "2026-12-01T10:00:00-08:00",
+      "venue": "caesars_forum",
+      "room": "Forum Hall 105",
+      "seats": "available",
+      "speakers": [
+        "Demo Speaker 26"
+      ]
+    },
+    {
+      "id": "syn-0027",
+      "code": "SYN-SEC107",
+      "title": "Hardening serverless APIs",
+      "abstract": "Authorizers, throttling and input validation patterns. (Synthetic demo session.)",
+      "type": "Builders' session",
+      "level": "100",
+      "topics": [
+        "Security",
+        "Serverless"
+      ],
+      "start": "2026-12-02T09:00:00-08:00",
+      "end": "2026-12-02T10:00:00-08:00",
+      "venue": "encore",
+      "room": "Encore Ballroom 118",
+      "seats": "limited",
+      "speakers": [
+        "Demo Speaker 27"
+      ]
+    },
+    {
+      "id": "syn-0028",
+      "code": "SYN-SEC208",
+      "title": "Secrets out of source code for good",
+      "abstract": "Migrating hard-coded secrets to a managed secrets store. (Synthetic demo session.)",
+      "type": "Workshop",
+      "level": "200",
+      "topics": [
+        "Security"
+      ],
+      "start": "2026-12-03T09:00:00-08:00",
+      "end": "2026-12-03T11:00:00-08:00",
+      "venue": "wynn",
+      "room": "Convention Promenade, Room 131",
+      "seats": "veryLimited",
+      "speakers": [
+        "Demo Speaker 28"
+      ]
+    },
+    {
+      "id": "syn-0029",
+      "code": "SYN-SEC409",
+      "title": "Continuous compliance as code",
+      "abstract": "Policy checks in pipelines with auto-remediation. (Synthetic demo session.)",
+      "type": "Code talk",
+      "level": "400",
+      "topics": [
+        "Security",
+        "Compliance"
+      ],
+      "start": "2026-11-30T10:30:00-08:00",
+      "end": "2026-11-30T11:30:00-08:00",
+      "venue": "venetian",
+      "room": "Level 3, Synthetic Room 144",
+      "seats": "walkUp",
+      "speakers": [
+        "Demo Speaker 29"
+      ]
+    },
+    {
+      "id": "syn-0030",
+      "code": "SYN-SEC110",
+      "title": "Supply chain security for container images",
+      "abstract": "Signing, scanning and provenance for images you ship. (Synthetic demo session.)",
+      "type": "Chalk talk",
+      "level": "100",
+      "topics": [
+        "Security"
+      ],
+      "start": "2026-12-01T10:30:00-08:00",
+      "end": "2026-12-01T11:30:00-08:00",
+      "venue": "mandalay_bay",
+      "room": "South Convention, Room 157",
+      "seats": "unavailable",
+      "speakers": [
+        "Demo Speaker 30"
+      ]
+    },
+    {
+      "id": "syn-0031",
+      "code": "SYN-SVS201",
+      "title": "Event-driven architectures: beyond the basics",
+      "abstract": "Idempotency, ordering and replay in event-driven systems. (Synthetic demo session.)",
+      "type": "Breakout",
+      "level": "200",
+      "topics": [
+        "Serverless"
+      ],
+      "start": "2026-12-02T10:30:00-08:00",
+      "end": "2026-12-02T11:30:00-08:00",
+      "venue": "mandalay_bay",
+      "room": "South Convention, Room 170",
+      "seats": "available",
+      "speakers": [
+        "Demo Speaker 31"
+      ]
+    },
+    {
+      "id": "syn-0032",
+      "code": "SYN-SVS302",
+      "title": "Step-by-step workflows with state machines",
+      "abstract": "Orchestrate retries, human approvals and parallel branches. (Synthetic demo session.)",
+      "type": "Builders' session",
+      "level": "300",
+      "topics": [
+        "Serverless"
+      ],
+      "start": "2026-12-03T10:30:00-08:00",
+      "end": "2026-12-03T11:30:00-08:00",
+      "venue": "mgm_grand",
+      "room": "Grand Ballroom 103",
+      "seats": "limited",
+      "speakers": [
+        "Demo Speaker 32"
+      ]
+    },
+    {
+      "id": "syn-0033",
+      "code": "SYN-SVS203",
+      "title": "Local testing for serverless apps",
+      "abstract": "Emulators, contract tests and fast feedback loops. (Synthetic demo session.)",
+      "type": "Workshop",
+      "level": "200",
+      "topics": [
+        "Serverless",
+        "Developer tools"
+      ],
+      "start": "2026-11-30T12:00:00-08:00",
+      "end": "2026-11-30T14:00:00-08:00",
+      "venue": "caesars_forum",
+      "room": "Forum Hall 116",
+      "seats": "veryLimited",
+      "speakers": [
+        "Demo Speaker 33"
+      ]
+    },
+    {
+      "id": "syn-0034",
+      "code": "SYN-SVS204",
+      "title": "Tuning function performance and cost",
+      "abstract": "Memory sizing, concurrency and cold-start mitigation. (Synthetic demo session.)",
+      "type": "Code talk",
+      "level": "200",
+      "topics": [
+        "Serverless"
+      ],
+      "start": "2026-12-01T12:00:00-08:00",
+      "end": "2026-12-01T13:00:00-08:00",
+      "venue": "encore",
+      "room": "Encore Ballroom 129",
+      "seats": "walkUp",
+      "speakers": [
+        "Demo Speaker 34"
+      ]
+    },
+    {
+      "id": "syn-0035",
+      "code": "SYN-SVS305",
+      "title": "Serverless data pipelines on a budget",
+      "abstract": "Ingest, transform and query without managing clusters. (Synthetic demo session.)",
+      "type": "Chalk talk",
+      "level": "300",
+      "topics": [
+        "Serverless",
+        "Data"
+      ],
+      "start": "2026-12-02T12:00:00-08:00",
+      "end": "2026-12-02T13:00:00-08:00",
+      "venue": "wynn",
+      "room": "Convention Promenade, Room 142",
+      "seats": "unavailable",
+      "speakers": [
+        "Demo Speaker 35"
+      ]
+    },
+    {
+      "id": "syn-0036",
+      "code": "SYN-SVS406",
+      "title": "From monolith to functions: a migration diary",
+      "abstract": "Strangler-fig migration of a fictional booking system. (Synthetic demo session.)",
+      "type": "Breakout",
+      "level": "400",
+      "topics": [
+        "Serverless"
+      ],
+      "start": "2026-12-03T12:00:00-08:00",
+      "end": "2026-12-03T13:00:00-08:00",
+      "venue": "venetian",
+      "room": "Level 3, Synthetic Room 155",
+      "seats": "available",
+      "speakers": [
+        "Demo Speaker 36"
+      ]
+    },
+    {
+      "id": "syn-0037",
+      "code": "SYN-SVS207",
+      "title": "Serverless containers vs functions",
+      "abstract": "Pick the right compute model for request and batch workloads. (Synthetic demo session.)",
+      "type": "Builders' session",
+      "level": "200",
+      "topics": [
+        "Serverless",
+        "Containers"
+      ],
+      "start": "2026-11-30T13:30:00-08:00",
+      "end": "2026-11-30T14:30:00-08:00",
+      "venue": "venetian",
+      "room": "Level 3, Synthetic Room 168",
+      "seats": "limited",
+      "speakers": [
+        "Demo Speaker 37"
+      ]
+    },
+    {
+      "id": "syn-0038",
+      "code": "SYN-SVS308",
+      "title": "Observability for distributed serverless apps",
+      "abstract": "Tracing, structured logs and metrics across async hops. (Synthetic demo session.)",
+      "type": "Workshop",
+      "level": "300",
+      "topics": [
+        "Serverless"
+      ],
+      "start": "2026-12-01T13:30:00-08:00",
+      "end": "2026-12-01T15:30:00-08:00",
+      "venue": "mandalay_bay",
+      "room": "South Convention, Room 101",
+      "seats": "veryLimited",
+      "speakers": [
+        "Demo Speaker 38"
+      ]
+    },
+    {
+      "id": "syn-0039",
+      "code": "SYN-SVS409",
+      "title": "Streaming AI responses from serverless backends",
+      "abstract": "Server-sent events and websockets for token streaming. (Synthetic demo session.)",
+      "type": "Code talk",
+      "level": "400",
+      "topics": [
+        "Serverless",
+        "Generative AI"
+      ],
+      "start": "2026-12-02T13:30:00-08:00",
+      "end": "2026-12-02T14:30:00-08:00",
+      "venue": "mgm_grand",
+      "room": "Grand Ballroom 114",
+      "seats": "walkUp",
+      "speakers": [
+        "Demo Speaker 39"
+      ]
+    },
+    {
+      "id": "syn-0040",
+      "code": "SYN-SVS110",
+      "title": "Building webhooks that never drop events",
+      "abstract": "Queues, dead-letter handling and replay for inbound webhooks. (Synthetic demo session.)",
+      "type": "Chalk talk",
+      "level": "100",
+      "topics": [
+        "Serverless"
+      ],
+      "start": "2026-12-03T13:30:00-08:00",
+      "end": "2026-12-03T14:30:00-08:00",
+      "venue": "caesars_forum",
+      "room": "Forum Hall 127",
+      "seats": "unavailable",
+      "speakers": [
+        "Demo Speaker 40"
+      ]
+    },
+    {
+      "id": "syn-0041",
+      "code": "SYN-DAT301",
+      "title": "Lakehouse fundamentals for app teams",
+      "abstract": "Open table formats, partitioning and query engines explained. (Synthetic demo session.)",
+      "type": "Breakout",
+      "level": "300",
+      "topics": [
+        "Data",
+        "Analytics"
+      ],
+      "start": "2026-11-30T15:00:00-08:00",
+      "end": "2026-11-30T16:00:00-08:00",
+      "venue": "encore",
+      "room": "Encore Ballroom 140",
+      "seats": "available",
+      "speakers": [
+        "Demo Speaker 41"
+      ]
+    },
+    {
+      "id": "syn-0042",
+      "code": "SYN-DAT402",
+      "title": "Choosing a database for each access pattern",
+      "abstract": "Key-value, document, relational and graph by workload. (Synthetic demo session.)",
+      "type": "Builders' session",
+      "level": "400",
+      "topics": [
+        "Data"
+      ],
+      "start": "2026-12-01T15:00:00-08:00",
+      "end": "2026-12-01T16:00:00-08:00",
+      "venue": "wynn",
+      "room": "Convention Promenade, Room 153",
+      "seats": "limited",
+      "speakers": [
+        "Demo Speaker 42"
+      ]
+    },
+    {
+      "id": "syn-0043",
+      "code": "SYN-DAT203",
+      "title": "Vector search inside your existing database",
+      "abstract": "Add embeddings to relational and document stores. (Synthetic demo session.)",
+      "type": "Workshop",
+      "level": "200",
+      "topics": [
+        "Data",
+        "AI/ML"
+      ],
+      "start": "2026-12-02T15:00:00-08:00",
+      "end": "2026-12-02T17:00:00-08:00",
+      "venue": "wynn",
+      "room": "Convention Promenade, Room 166",
+      "seats": "veryLimited",
+      "speakers": [
+        "Demo Speaker 43"
+      ]
+    },
+    {
+      "id": "syn-0044",
+      "code": "SYN-DAT204",
+      "title": "Real-time dashboards from streaming data",
+      "abstract": "Stream processing to sub-second dashboards. (Synthetic demo session.)",
+      "type": "Code talk",
+      "level": "200",
+      "topics": [
+        "Data",
+        "Analytics"
+      ],
+      "start": "2026-12-03T15:00:00-08:00",
+      "end": "2026-12-03T16:00:00-08:00",
+      "venue": "venetian",
+      "room": "Level 3, Synthetic Room 179",
+      "seats": "walkUp",
+      "speakers": [
+        "Demo Speaker 44"
+      ]
+    },
+    {
+      "id": "syn-0045",
+      "code": "SYN-DAT405",
+      "title": "Zero-downtime schema migrations",
+      "abstract": "Expand-and-contract migrations with live traffic. (Synthetic demo session.)",
+      "type": "Chalk talk",
+      "level": "400",
+      "topics": [
+        "Data"
+      ],
+      "start": "2026-11-30T16:30:00-08:00",
+      "end": "2026-11-30T17:30:00-08:00",
+      "venue": "mandalay_bay",
+      "room": "South Convention, Room 112",
+      "seats": "unavailable",
+      "speakers": [
+        "Demo Speaker 45"
+      ]
+    },
+    {
+      "id": "syn-0046",
+      "code": "SYN-DAT106",
+      "title": "Data contracts between teams",
+      "abstract": "Versioned schemas and ownership for shared datasets. (Synthetic demo session.)",
+      "type": "Breakout",
+      "level": "100",
+      "topics": [
+        "Data",
+        "Governance"
+      ],
+      "start": "2026-12-01T16:30:00-08:00",
+      "end": "2026-12-01T17:30:00-08:00",
+      "venue": "mgm_grand",
+      "room": "Grand Ballroom 125",
+      "seats": "available",
+      "speakers": [
+        "Demo Speaker 46"
+      ]
+    },
+    {
+      "id": "syn-0047",
+      "code": "SYN-DAT207",
+      "title": "Feature stores meet foundation models",
+      "abstract": "Combining structured features with LLM context. (Synthetic demo session.)",
+      "type": "Builders' session",
+      "level": "200",
+      "topics": [
+        "Data",
+        "Generative AI"
+      ],
+      "start": "2026-12-02T16:30:00-08:00",
+      "end": "2026-12-02T17:30:00-08:00",
+      "venue": "caesars_forum",
+      "room": "Forum Hall 138",
+      "seats": "limited",
+      "speakers": [
+        "Demo Speaker 47"
+      ]
+    },
+    {
+      "id": "syn-0048",
+      "code": "SYN-DAT308",
+      "title": "Cost-aware analytics at petabyte scale",
+      "abstract": "Partition pruning, caching and workload isolation. (Synthetic demo session.)",
+      "type": "Workshop",
+      "level": "300",
+      "topics": [
+        "Data",
+        "Analytics"
+      ],
+      "start": "2026-12-03T16:30:00-08:00",
+      "end": "2026-12-03T18:30:00-08:00",
+      "venue": "encore",
+      "room": "Encore Ballroom 151",
+      "seats": "veryLimited",
+      "speakers": [
+        "Demo Speaker 48"
+      ]
+    },
+    {
+      "id": "syn-0049",
+      "code": "SYN-DAT109",
+      "title": "Global tables and multi-region consistency",
+      "abstract": "Conflict resolution and latency trade-offs. (Synthetic demo session.)",
+      "type": "Code talk",
+      "level": "100",
+      "topics": [
+        "Data"
+      ],
+      "start": "2026-11-30T09:00:00-08:00",
+      "end": "2026-11-30T10:00:00-08:00",
+      "venue": "encore",
+      "room": "Encore Ballroom 164",
+      "seats": "walkUp",
+      "speakers": [
+        "Demo Speaker 49"
+      ]
+    },
+    {
+      "id": "syn-0050",
+      "code": "SYN-DAT210",
+      "title": "Synthetic data for testing and training",
+      "abstract": "Generate realistic test data without exposing customers. (Synthetic demo session.)",
+      "type": "Chalk talk",
+      "level": "200",
+      "topics": [
+        "Data",
+        "AI/ML"
+      ],
+      "start": "2026-12-01T09:00:00-08:00",
+      "end": "2026-12-01T10:00:00-08:00",
+      "venue": "wynn",
+      "room": "Convention Promenade, Room 177",
+      "seats": "unavailable",
+      "speakers": [
+        "Demo Speaker 50"
+      ]
+    },
+    {
+      "id": "syn-0051",
+      "code": "SYN-ARC301",
+      "title": "Cell-based architecture for blast-radius control",
+      "abstract": "Partition workloads into cells to contain failures. (Synthetic demo session.)",
+      "type": "Breakout",
+      "level": "300",
+      "topics": [
+        "Architecture"
+      ],
+      "start": "2026-12-02T09:00:00-08:00",
+      "end": "2026-12-02T10:00:00-08:00",
+      "venue": "venetian",
+      "room": "Level 3, Synthetic Room 110",
+      "seats": "available",
+      "speakers": [
+        "Demo Speaker 51"
+      ]
+    },
+    {
+      "id": "syn-0052",
+      "code": "SYN-ARC402",
+      "title": "Chaos experiments you can run on Monday",
+      "abstract": "Small, safe fault-injection experiments for any team. (Synthetic demo session.)",
+      "type": "Builders' session",
+      "level": "400",
+      "topics": [
+        "Architecture",
+        "Resilience"
+      ],
+      "start": "2026-12-03T09:00:00-08:00",
+      "end": "2026-12-03T10:00:00-08:00",
+      "venue": "mandalay_bay",
+      "room": "South Convention, Room 123",
+      "seats": "limited",
+      "speakers": [
+        "Demo Speaker 52"
+      ]
+    },
+    {
+      "id": "syn-0053",
+      "code": "SYN-ARC203",
+      "title": "FinOps for engineers",
+      "abstract": "Tagging, unit economics and cost alerts that engineers use. (Synthetic demo session.)",
+      "type": "Workshop",
+      "level": "200",
+      "topics": [
+        "Architecture",
+        "Cost"
+      ],
+      "start": "2026-11-30T10:30:00-08:00",
+      "end": "2026-11-30T12:30:00-08:00",
+      "venue": "mgm_grand",
+      "room": "Grand Ballroom 136",
+      "seats": "veryLimited",
+      "speakers": [
+        "Demo Speaker 53"
+      ]
+    },
+    {
+      "id": "syn-0054",
+      "code": "SYN-ARC304",
+      "title": "Platform engineering with golden paths",
+      "abstract": "Templates and self-service that teams actually adopt. (Synthetic demo session.)",
+      "type": "Code talk",
+      "level": "300",
+      "topics": [
+        "Architecture",
+        "Containers"
+      ],
+      "start": "2026-12-01T10:30:00-08:00",
+      "end": "2026-12-01T11:30:00-08:00",
+      "venue": "caesars_forum",
+      "room": "Forum Hall 149",
+      "seats": "walkUp",
+      "speakers": [
+        "Demo Speaker 54"
+      ]
+    },
+    {
+      "id": "syn-0055",
+      "code": "SYN-ARC405",
+      "title": "Measuring the carbon cost of your workloads",
+      "abstract": "Practical sustainability metrics for cloud apps. (Synthetic demo session.)",
+      "type": "Chalk talk",
+      "level": "400",
+      "topics": [
+        "Architecture",
+        "Sustainability"
+      ],
+      "start": "2026-12-02T10:30:00-08:00",
+      "end": "2026-12-02T11:30:00-08:00",
+      "venue": "caesars_forum",
+      "room": "Forum Hall 162",
+      "seats": "unavailable",
+      "speakers": [
+        "Demo Speaker 55"
+      ]
+    },
+    {
+      "id": "syn-0056",
+      "code": "SYN-DEV101",
+      "title": "Infrastructure as code testing strategies",
+      "abstract": "Unit, snapshot and integration tests for IaC. (Synthetic demo session.)",
+      "type": "Breakout",
+      "level": "100",
+      "topics": [
+        "Developer tools"
+      ],
+      "start": "2026-12-03T10:30:00-08:00",
+      "end": "2026-12-03T11:30:00-08:00",
+      "venue": "encore",
+      "room": "Encore Ballroom 175",
+      "seats": "available",
+      "speakers": [
+        "Demo Speaker 56"
+      ]
+    },
+    {
+      "id": "syn-0057",
+      "code": "SYN-DEV302",
+      "title": "Code review bots that help, not nag",
+      "abstract": "Tune automated review for signal over noise. (Synthetic demo session.)",
+      "type": "Builders' session",
+      "level": "300",
+      "topics": [
+        "Developer tools",
+        "Generative AI"
+      ],
+      "start": "2026-11-30T12:00:00-08:00",
+      "end": "2026-11-30T13:00:00-08:00",
+      "venue": "wynn",
+      "room": "Convention Promenade, Room 108",
+      "seats": "limited",
+      "speakers": [
+        "Demo Speaker 57"
+      ]
+    },
+    {
+      "id": "syn-0058",
+      "code": "SYN-DEV403",
+      "title": "Fast CI for monorepos",
+      "abstract": "Caching, affected-target detection and parallelism. (Synthetic demo session.)",
+      "type": "Workshop",
+      "level": "400",
+      "topics": [
+        "Developer tools",
+        "Containers"
+      ],
+      "start": "2026-12-01T12:00:00-08:00",
+      "end": "2026-12-01T14:00:00-08:00",
+      "venue": "venetian",
+      "room": "Level 3, Synthetic Room 121",
+      "seats": "veryLimited",
+      "speakers": [
+        "Demo Speaker 58"
+      ]
+    },
+    {
+      "id": "syn-k001",
+      "code": "SYN-KEY01",
+      "title": "Synthetic keynote: the next decade of building",
+      "abstract": "A fictional opening keynote used only for demo data.",
+      "type": "Keynote",
+      "level": "100",
+      "topics": [
+        "Keynote",
+        "Generative AI",
+        "Agents"
+      ],
+      "start": "2026-12-01T08:00:00-08:00",
+      "end": "2026-12-01T10:00:00-08:00",
+      "venue": "venetian",
+      "room": "Synthetic Keynote Hall",
+      "seats": "walkUp",
+      "speakers": [
+        "Demo Keynote Speaker"
+      ]
+    },
+    {
+      "id": "syn-k002",
+      "code": "SYN-KEY02",
+      "title": "Synthetic keynote: data and AI together",
+      "abstract": "A fictional keynote placeholder used only for demo data.",
+      "type": "Keynote",
+      "level": "100",
+      "topics": [
+        "Keynote",
+        "Data",
+        "AI/ML"
+      ],
+      "start": "2026-12-02T08:00:00-08:00",
+      "end": "2026-12-02T10:00:00-08:00",
+      "venue": "venetian",
+      "room": "Synthetic Keynote Hall",
+      "seats": "walkUp",
+      "speakers": [
+        "Demo Keynote Speaker"
+      ]
+    }
+  ]
+}
