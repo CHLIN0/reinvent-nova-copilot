@@ -332,6 +332,12 @@ def _call(name: str, args: dict, be: Backend) -> Any:
         if pre_dropped and isinstance(result, dict):
             result.setdefault("dropped", [])
             result["dropped"] = pre_dropped + list(result["dropped"])
+        flagged = [s for s in pool if s.get("conflict")]
+        if flagged and isinstance(result, dict):  # a must-attend session breaks a stated limit: not feasible
+            result["feasible"] = False
+            result["limit_conflicts"] = [{**_brief(s, 0), "reason": s["conflict"]} for s in flagged]
+            result["warnings"] = list(result.get("warnings") or []) + [
+                f"{s.get('code') or s['id']} is must-attend but {s['conflict']}" for s in flagged]
         out = {"plan": result, "not_found": missing + must_missing}
         if args.get("use_profile", True):
             out["home_base_travel"] = _home_base_travel(be, result, args.get("prefer") or "fastest")
@@ -411,7 +417,7 @@ def _schedule_lock(be: Backend, days: set[str]) -> dict:
     Reserved sessions become must-attend and blocked windows; favorites become priority candidates.
     The model cannot leave them out because the tools load them themselves.
     """
-    lock: dict[str, Any] = {"reserved": [], "favorites": [], "blocked": [], "error": None}
+    lock: dict[str, Any] = {"reserved": [], "favorites": [], "blocked": [], "unresolved": [], "error": None}
     if not days or not _signed_in():
         return lock
     try:
@@ -423,7 +429,11 @@ def _schedule_lock(be: Backend, days: set[str]) -> dict:
     for key in ("reserved", "favorites"):
         for sid in _schedule_ids(sched.get(key)):
             s = be.get_session(sid)
-            if not s or not s.get("start") or not s.get("end") or _local_date(s["start"]) not in days:
+            if not s or not s.get("start") or not s.get("end"):
+                if key == "reserved":
+                    lock["unresolved"].append(sid)
+                continue
+            if _local_date(s["start"]) not in days:
                 continue
             if key == "reserved":
                 reserved_ids.add(s["id"])
@@ -442,6 +452,9 @@ def _with_lock(out: dict, lock: dict) -> dict:
         out["locked_from_schedule"] = [s.get("code") or s["id"] for s in lock["reserved"]]
     if lock["error"]:
         out["schedule_lock_error"] = lock["error"] + " (official reservations were NOT applied)"
+    if lock["unresolved"]:
+        out["reservations_not_applied"] = {"ids": lock["unresolved"],
+                                           "reason": "not in the loaded catalog or without a start/end time"}
     return out
 
 

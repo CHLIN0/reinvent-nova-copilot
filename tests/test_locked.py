@@ -132,6 +132,31 @@ class LockedReservationsTest(Base):
         self.assertTrue(ok, out)
         self.assertEqual(sorted(out["plan"]["must"]), sorted(RESERVED_CODES + ["SYN-GEN205"]))
 
+    def test_reservation_breaking_a_caller_limit_is_not_feasible(self):
+        be = fixture_backend({"reserved": ["syn-0019"], "favorites": [], "personalTime": []})  # GEN309 15:00-16:00
+        for extra in ({"blocked": [{"start": "15:00", "end": "16:00", "label": "customer meeting"}]},
+                      {"back_by": "14:00"}):
+            out, ok = tools.dispatch("plan_itinerary", {"candidate_ids": ["syn-0011"], "day": "Wed",
+                                                        "use_profile": False, **extra}, be)
+            self.assertTrue(ok, out)
+            self.assertEqual(out["locked_from_schedule"], ["SYN-GEN309"])
+            self.assertFalse(out["plan"]["feasible"], extra)
+            self.assertEqual([c["code"] for c in out["plan"]["limit_conflicts"]], ["SYN-GEN309"])
+            self.assertTrue(any("SYN-GEN309 is must-attend" in w for w in out["plan"]["warnings"]))
+
+    def test_unresolved_reservations_are_reported(self):
+        def get_session(sid):
+            if sid == "no-times":
+                return {"id": "no-times", "code": "X1", "start": "", "end": ""}
+            return catalog.get_session(sid, source="fixture")
+
+        be = fixture_backend({"reserved": ["syn-0007", "missing-id", "no-times"], "favorites": []})
+        be.get_session = get_session
+        out, ok = tools.dispatch("check_itinerary", {"session_ids": ["SYN-AI303"]}, be)
+        self.assertTrue(ok, out)
+        self.assertEqual(out["locked_from_schedule"], ["SYN-AI407"])
+        self.assertEqual(out["reservations_not_applied"]["ids"], ["missing-id", "no-times"])
+
     def test_check_itinerary_adds_reservations_of_the_same_day(self):
         be = fixture_backend({"reserved": RESERVED, "favorites": [], "personalTime": []})
         out, ok = tools.dispatch("check_itinerary", {"session_ids": ["SYN-AI303"]}, be)  # 09:00-11:00 Wed
