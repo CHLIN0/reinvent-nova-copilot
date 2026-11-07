@@ -6,6 +6,7 @@ Status: **v2 draft for BR's review, 2026-11-07**. Nothing is started. v1 (the UX
 
 | # | Expectation | Where it lands |
 |---|---|---|
+| E0 | The basics: browse the agenda, understand session content, and translation (if the official API has none, at least translate when I talk to the agent; translating everything is too costly) | M0 basics + T10 on-demand translation (per session, cached, cost logged) |
 | E1 | An AI agent that understands my situation, arranges my schedule and recommends; I can *see* how it filtered, and get more ways to understand re:Invent so I can plan precisely | M0 (correctness), M1 (explainable recommendations, exploration views) |
 | E2 | Consider Amazon Bedrock AgentCore for the agent; record all costs | M2 (spike first, then decide), cost ledger from M0 |
 | E3 | 3D and route planning because of the many buildings and landmarks; indoor routes if possible | M3 (indoor feasibility spike, then build what the data allows) |
@@ -24,7 +25,8 @@ Status: **v2 draft for BR's review, 2026-11-07**. Nothing is started. v1 (the UX
 
 ## 3. Milestones
 
-### M0 · Correct and usable (the v1 overhaul; 9 tasks, unchanged)
+### M0 · Basics, correct and usable (the v1 overhaul plus basics)
+Basics that must simply work: browse by day/venue/type/level and search; open a session and read the full abstract, speakers, room and seat status; add to the plan; ask the agent about any session. **T10 · Understand sessions in your language**: the official API accepts `locale`, but re:Invent 2026 reports `supportedLanguageCodes: ["en-US"]` (10/26 reading), so translation is ours, on demand: `GET /api/translate/<id>?lang=` checks a server cache (session id + abstract hash), otherwise Nova Pro translates title and abstract once, stored under `local-private/translations/`, cost logged; Atlas session view gets a Translate button with an "unofficial translation" mark; Copilot answers in the profile language and keeps session titles and codes in the original. Never pre-translate the whole catalog. Acceptance: a zh-Hant user sees a translated abstract within 3 s; the second open makes no model call; `docs/costs.md` has a translation line.
 T1 server-side state · T2 reservations locked in code · T3 signed-in first screen = my re:Invent · T4 panel-sized answers · T5 token/restart handling · T6 new/changed sessions since last visit · T7 RSVP lifecycle · T8 remove duplicates · T9 reliability gate. Acceptance criteria and must-nots are in section 5. Plus **T0 · cost ledger**: every Bedrock call logs model, input/output tokens and estimated USD to `local-private/costs.jsonl`; `docs/costs.md` summarises per feature. This starts in M0 so M2 has a baseline.
 
 ### M1 · Explainable recommendations and more ways to explore (E1)
@@ -54,7 +56,7 @@ Team planning, shared plans, consent model. Documented as a parked list; no work
 
 ## 4. Order and parallelism
 
-M0 first (T0+T1+T2 → T3+T4+T5 → T6+T7+T8 → T9). The three spikes (M2a, M3a, M4a) can run in parallel with M0's second wave because they are read-and-measure work that touches no product code. M1 starts after M0 T3. M2b/M3b/M4b start only after BR reads the memos.
+M0 first (T0+T1+T2 → T3+T4+T5+T10 → T6+T7+T8 → T9). The three spikes (M2a, M3a, M4a) can run in parallel with M0's second wave because they are read-and-measure work that touches no product code. M1 starts after M0 T3. M2b/M3b/M4b start only after BR reads the memos.
 
 ## 5. M0 task details (acceptance and must-nots)
 
