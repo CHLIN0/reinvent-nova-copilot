@@ -144,7 +144,7 @@ class LockedReservationsTest(Base):
             self.assertEqual([c["code"] for c in out["plan"]["limit_conflicts"]], ["SYN-GEN309"])
             self.assertTrue(any("SYN-GEN309 is must-attend" in w for w in out["plan"]["warnings"]))
 
-    def test_unresolved_reservations_are_reported(self):
+    def unresolved_backend(self):
         def get_session(sid):
             if sid == "no-times":
                 return {"id": "no-times", "code": "X1", "start": "", "end": ""}
@@ -152,10 +152,28 @@ class LockedReservationsTest(Base):
 
         be = fixture_backend({"reserved": ["syn-0007", "missing-id", "no-times"], "favorites": []})
         be.get_session = get_session
-        out, ok = tools.dispatch("check_itinerary", {"session_ids": ["SYN-AI303"]}, be)
-        self.assertTrue(ok, out)
+        return be
+
+    def test_unresolved_reservations_make_check_unverified(self):
+        out, ok = tools.dispatch("check_itinerary", {"session_ids": ["SYN-AI407"]}, self.unresolved_backend())
+        self.assertTrue(ok, out)  # not a hard failure: a cancelled session must not block checking forever
         self.assertEqual(out["locked_from_schedule"], ["SYN-AI407"])
         self.assertEqual(out["reservations_not_applied"]["ids"], ["missing-id", "no-times"])
+        self.assertFalse(out["check"]["feasible"])
+        self.assertIn("2 reservation(s) could not be checked: missing-id, no-times", out["check"]["warnings"])
+        self.assertEqual(next(iter(out)), "reservations_not_applied")
+
+    def test_unresolved_reservations_make_plan_unverified(self):
+        out, ok = tools.dispatch("plan_itinerary", {"candidate_ids": ["syn-0011"], "day": "Wed", "use_profile": False},
+                                 self.unresolved_backend())
+        self.assertTrue(ok, out)
+        self.assertIn("SYN-AI407", [s["code"] for s in out["plan"]["chosen"]])  # resolved reservation still locked
+        self.assertFalse(out["plan"]["feasible"])
+        self.assertIn("2 reservation(s) could not be checked: missing-id, no-times", out["plan"]["warnings"])
+        for trace in ([ToolCall("plan_itinerary", {}, ok, out)],
+                      [{"name": "plan_itinerary", "ok": ok, "result": json.dumps(out)[:200] + "..."}]):
+            _, removed = guard.strip_unverified_feasibility("Your Wednesday is feasible. Enjoy.", trace)
+            self.assertEqual(removed, ["Your Wednesday is feasible."])
 
     def test_check_itinerary_adds_reservations_of_the_same_day(self):
         be = fixture_backend({"reserved": RESERVED, "favorites": [], "personalTime": []})
@@ -231,6 +249,12 @@ class GuardTest(unittest.TestCase):
         for name in ("check_itinerary", "plan_itinerary"):
             for trace in ([ToolCall(name, {}, True, {})], [{"name": name, "ok": True}]):
                 self.assertEqual(guard.strip_unverified_feasibility(CLAIM, trace), (CLAIM, []))
+
+    def test_unresolved_reservations_make_any_check_unverified(self):
+        clean = ToolCall("check_itinerary", {}, True, {"check": {"feasible": True}})
+        dirty = ToolCall("check_itinerary", {}, True, {"reservations_not_applied": {"ids": ["x"]}, "check": {}})
+        self.assertEqual(guard.strip_unverified_feasibility(CLAIM, [clean]), (CLAIM, []))
+        self.assertTrue(guard.strip_unverified_feasibility(CLAIM, [clean, dirty])[1])
 
     def test_untouched_without_claims(self):
         text = "SYN-GEN101 covers retrieval. Want me to check your Wednesday?"

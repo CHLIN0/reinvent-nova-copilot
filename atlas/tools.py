@@ -452,8 +452,16 @@ def _with_lock(out: dict, lock: dict) -> dict:
     if lock["reserved"] or _signed_in():
         out["locked_from_schedule"] = [s.get("code") or s["id"] for s in lock["reserved"]]
     if lock["unresolved"]:
-        out["reservations_not_applied"] = {"ids": lock["unresolved"],
-                                           "reason": "not in the loaded catalog or without a start/end time"}
+        # A reservation we could not place in time cannot be checked: never present the result as feasible.
+        ids = lock["unresolved"]
+        warning = f"{len(ids)} reservation(s) could not be checked: {', '.join(ids)}"
+        inner = out.get("plan") if isinstance(out.get("plan"), dict) else out.get("check")
+        if isinstance(inner, dict):
+            inner["feasible"] = False
+            inner["warnings"] = list(inner.get("warnings") or []) + [warning]
+        # first key, so truncated traces (web.py shortens results) still show it to the guard
+        out = {"reservations_not_applied": {"ids": ids, "warning": warning,
+                                            "reason": "not in the loaded catalog or without a start/end time"}, **out}
     return out
 
 
