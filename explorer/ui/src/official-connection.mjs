@@ -225,7 +225,8 @@ export function createOfficialConnection({
     },
     /**
      * The server's own view of the sign-in (from Copilot's status poll): signed out or expired
-     * re-enables "登入 AWS Events"; about to expire offers "再次登入"; signed in elsewhere re-checks.
+     * re-enables "登入 AWS Events" (also after a failed auth check); about to expire offers "再次登入";
+     * signed in elsewhere re-checks.
      */
     applyStatus({ signed_in, soon } = {}) {
       if (stopped || typeof signed_in !== "boolean") return;
@@ -238,6 +239,12 @@ export function createOfficialConnection({
             pending_sign_in: false,
             error: "sign_in_required",
           };
+          emit();
+          schedulePoll();
+        } else if (state.error === "connection_unavailable") {
+          // The poll got an answer from this service, so an earlier failed auth check no longer
+          // applies: clear it and give the sign-in button back.
+          state = { ...state, checking: false, checked: true, error: "sign_in_required" };
           emit();
           schedulePoll();
         }

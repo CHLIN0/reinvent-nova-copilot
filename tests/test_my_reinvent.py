@@ -23,6 +23,7 @@ class MyReInventTest(unittest.TestCase):
         self.assertNotRegex(app, r"calendar\.(changeView|gotoDate)\(")
         self.assertIn("calendarSync.go(state.view, state.day);", app)
         self.assertIn("homeChoice.plan(official?.status);", app)
+        self.assertIn("const tab = state.tab && homeChoice.urlTab;", app)  # fallback Explore is not saved
         self.assertIn("officialConnection.applyStatus(", app)
         copilot = (UI.parent.parent / "web" / "copilot.js").read_text(encoding="utf-8")
         self.assertIn('"atlas:auth-status"', copilot)

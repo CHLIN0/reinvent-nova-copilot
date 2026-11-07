@@ -174,3 +174,38 @@ test("picking a day on My re:Invent moves the Explore calendar too (Codex T3 fin
   assert.deepEqual(calls.at(-1), ["fiveDays", "2026-11-30"]);
   assert.equal(calls.length, 2);
 });
+
+test("a saved tab=mine does not block My re:Invent after a failed auth check (Codex T3 round 2)", () => {
+  const h = home("mine");
+  h.choice.auth(false);
+  assert.deepEqual(h.last(), { tab: "explore", previous: null, signedIn: false });
+  h.choice.plan("live");
+  assert.deepEqual(h.last(), { tab: "mine", previous: "explore", signedIn: true });
+});
+
+test("only a chosen Explore is remembered in the URL or blocks My re:Invent", () => {
+  const fallback = home();
+  fallback.choice.auth(false);
+  assert.equal(fallback.choice.urlTab, null, "an Explore the page fell back to is not saved");
+  fallback.choice.plan("live");
+  assert.equal(fallback.choice.urlTab, "mine");
+  const clicked = home();
+  clicked.choice.auth(true);
+  clicked.choice.choose("explore");
+  assert.equal(clicked.choice.urlTab, "explore");
+  // Chose My re:Invent, lost sign-in (fallback Explore), signed in again: back to My re:Invent.
+  const back = home();
+  back.choice.auth(true);
+  back.choice.choose("mine");
+  back.choice.auth(false);
+  assert.equal(back.last().tab, "explore");
+  assert.equal(back.choice.urlTab, null);
+  back.choice.auth(true);
+  assert.equal(back.last().tab, "mine");
+  // A URL tab=explore stays until the attendee clicks something else.
+  const url = home("explore");
+  url.choice.auth(false);
+  url.choice.plan("live");
+  assert.equal(url.last().tab, "explore");
+  assert.equal(url.choice.urlTab, "explore");
+});

@@ -241,3 +241,29 @@ test("signed in per the poll while Atlas still shows signed out re-checks the se
   assert.equal(calls.at(-1).url, "/api/auth/status");
   controller.stop();
 });
+
+test("a failed auth check recovers when the status poll answers signed out (Codex T3 round 2)", async () => {
+  let fail = true;
+  let copy = null;
+  const controller = createOfficialConnection({
+    request: async (url) => {
+      if (url === "/api/auth/start")
+        return response({ authorization_url: "https://example.invalid/authorize" });
+      if (fail) throw Error("network");
+      return response(status());
+    },
+    onChange: (state) => {
+      copy = connectionCopy(state);
+    },
+    schedule: () => 0,
+    cancel: () => {},
+  });
+  await controller.refresh();
+  assert.equal(controller.snapshot().error, "connection_unavailable");
+  assert.equal(copy.disabled, true);
+  fail = false;
+  controller.applyStatus({ signed_in: false, soon: false });
+  assert.deepEqual([copy.button, copy.disabled], ["登入 AWS Events", false]);
+  assert.equal(await controller.start(), "https://example.invalid/authorize");
+  controller.stop();
+});

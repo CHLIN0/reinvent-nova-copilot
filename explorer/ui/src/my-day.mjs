@@ -92,21 +92,26 @@ export function dayCounts(items, days = DAYS) {
 /**
  * Which tab to show, from both proofs of sign-in: /api/auth/status (`auth`) and /api/plan's
  * official.status == "live" (`plan`). Either one arriving can decide or change the tab, so a failed
- * auth check followed by a live plan still opens My re:Invent. `onChange({tab, previous, signedIn})`
- * runs on every update once anything is known.
+ * auth check followed by a live plan still opens My re:Invent. Only an explicit Explore (the
+ * attendee clicked it, or the URL says `tab=explore` and nothing was clicked since) keeps Explore
+ * once signed in; `tab=mine` in the URL never blocks. `onChange({tab, previous, signedIn})` runs on
+ * every update once anything is known.
  */
 export function createHomeChoice({ requested = null, onChange }) {
   let auth = null,
     planLive = false,
-    chosen = false,
+    chosen = null,
     tab = null;
+  const explicitExplore = () =>
+    tab === "explore" &&
+    (chosen === "explore" || (chosen === null && requested === "explore"));
   function decide() {
     if (auth === null && !planLive) return;
     const signedIn = auth === true || planLive;
     const previous = tab;
     if (tab === null) tab = chooseTab({ signedIn, requested });
     else if (!signedIn && tab === "mine") tab = "explore";
-    else if (signedIn && tab === "explore" && !chosen && !requested) tab = "mine";
+    else if (signedIn && tab === "explore" && !explicitExplore()) tab = "mine";
     onChange({ tab, previous, signedIn });
   }
   return {
@@ -119,11 +124,15 @@ export function createHomeChoice({ requested = null, onChange }) {
       decide();
     },
     choose(next) {
-      chosen = true;
+      chosen = next;
       tab = next;
     },
     get tab() {
       return tab;
+    },
+    /** What the URL may remember: My re:Invent always, Explore only when it was chosen. */
+    get urlTab() {
+      return tab === "mine" || explicitExplore() ? tab : null;
     },
   };
 }

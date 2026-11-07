@@ -144,7 +144,10 @@ function writeURL() {
     layout: state.layout,
     filters: "1",
   });
-  if (state.tab) p.set("tab", state.tab);
+  // An Explore the page fell back to (signed out, failed check) is not saved, so it never blocks
+  // My re:Invent on reload.
+  const tab = state.tab && homeChoice.urlTab;
+  if (tab) p.set("tab", tab);
   for (const k of ["query", "from", "to", "selection"])
     if (state[k]) p.set(k, state[k]);
   for (const k of FILTER_DIMENSIONS)
