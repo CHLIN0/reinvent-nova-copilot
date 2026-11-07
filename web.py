@@ -12,6 +12,7 @@ import argparse
 import json
 import os
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -31,9 +32,11 @@ EXPLORER_CSP = ("default-src 'self'; script-src 'self'; worker-src 'self'; style
                 "frame-src 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; base-uri 'none'")
 RESERVED = {8484, 8485, 8486, 8487, 8488, 8489}  # OAuth loopback callbacks
 MAX_BODY = 64 * 1024
+RESTARTED_AT = time.time()
 
 _state_lock = threading.Lock()
-_state: dict = {"agent": None, "allow_write": False, "sign_in": {"running": False, "url": None, "error": None}}
+_state: dict = {"agent": None, "allow_write": False, "signed_in_once": False,
+                "sign_in": {"running": False, "url": None, "error": None}}
 
 
 def _agent() -> Agent:
@@ -48,9 +51,26 @@ def _short(result, limit=1500):
 
 
 def _status() -> dict:
-    signed = official_auth.is_signed_in()
+    auth = official_auth.current_auth()
+    status = auth.status() if auth else {}
+    connected = bool(status.get("connected"))
+    if connected:
+        _state["signed_in_once"] = True
+    expires_at = status.get("expires_at")
+    now = time.time()
+    seconds_left = max(0, int(expires_at - now)) if expires_at is not None else None
+    refreshable = connected and bool(status.get("refreshable"))
+    signed = connected and (expires_at is None or expires_at > now or refreshable)
+    reason = (None if signed else "restarted" if not _state["signed_in_once"] else
+              "expired" if connected and seconds_left == 0 else "sign_in_required")
     return {
         "signed_in": signed,
+        "reason": reason,
+        "expires_at": expires_at,
+        "seconds_left": seconds_left,
+        "restarted_at": RESTARTED_AT,
+        "refreshable": refreshable,
+        "auth_status": status.get("auth_status", "unauthenticated"),
         "catalog": "official AWS Events API (live)" if signed else "synthetic demo catalog",
         "model": os.environ.get("NOVA_MODEL_ID") or "us.amazon.nova-pro-v1:0",
         "profile": profile.load_profile()["profile"],
@@ -73,6 +93,7 @@ def _start_sign_in(origin: str) -> dict:
     def run() -> None:
         try:
             official_auth.sign_in(open_browser=False, announce=announce, return_url=origin + "/?signin=complete")
+            _state["signed_in_once"] = True
             catalog.clear_cache()
             from atlas import tools
             tools._official_cache["tools"] = None
