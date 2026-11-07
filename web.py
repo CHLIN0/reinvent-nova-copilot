@@ -119,6 +119,8 @@ def _my_schedule() -> dict:
 
 def _briefing() -> dict:
     """Welcome-back: compare the official schedule with the last saved snapshot, then ask Nova for a short plan."""
+    from atlas import guard
+
     state = profile.load_state()
     sched = _my_schedule() if official_auth.is_signed_in() else {"signed_in": False}
     diff = None
@@ -131,12 +133,20 @@ def _briefing() -> dict:
     first_visit = not state.get("visits")
     state["visits"] = int(state.get("visits") or 0) + 1
     profile.save_state(state)
+    by_day: dict[str, list[str]] = {}
+    for r in sched.get("reserved") or []:
+        if r.get("start"):
+            by_day.setdefault(r["start"][:10], []).append(r["id"])
+    checks = "; ".join(f"{day}: {json.dumps(ids)}" for day, ids in sorted(by_day.items()))
     prompt = ("Brief me as I open the app (this is not a new question). Call get_profile and get_my_schedule. "
               + ("This is my first visit. " if first_visit else f"Since my last visit my official schedule changed: {json.dumps(diff)}. " if diff else "")
-              + "In under 120 words: 1) check_itinerary on my reserved sessions day by day and name any conflict or tight transition, "
+              + (f"Before saying anything about feasibility, call check_itinerary once per conference day with these reserved session ids: {checks}. "
+                 if checks else "Do not claim any schedule is feasible unless check_itinerary or plan_itinerary confirmed it. ")
+              + "In under 120 words: 1) name any conflict or tight transition the checks found, "
               "2) recommend what to do next (sessions to add on days with gaps, or what to fix), "
               "3) if my profile is missing my hotel or walking limit, ask for it in one line.")
     out = _chat(prompt, allow_write=False)
+    out["text"], out["removed"] = guard.strip_unverified_feasibility(out["text"], out["trace"])
     out["schedule_diff"] = diff
     out["first_visit"] = first_visit
     return out

@@ -287,9 +287,13 @@ def _call(name: str, args: dict, be: Backend) -> Any:
         sessions, missing = _resolve(be, args.get("session_ids", []))
         if not sessions:
             raise ToolError(f"None of these session ids were found: {missing}")
+        lock = _schedule_lock(be, {_local_date(s["start"]) for s in sessions if s.get("start")})
+        have = {s["id"] for s in sessions}
+        sessions += [s for s in lock["reserved"] if s["id"] not in have]
         sessions.sort(key=lambda s: s.get("start", ""))
         result = be.check_itinerary(sessions, buffer_min=int(args.get("buffer_min", 10)))
-        return {"sessions": [_brief(s, 0) for s in sessions], "check": result, "not_found": missing}
+        out = {"sessions": [_brief(s, 0) for s in sessions], "check": result, "not_found": missing}
+        return _with_lock(out, lock)
     if name == "plan_itinerary":
         candidates, missing = _resolve(be, args.get("candidate_ids", []))
         must_sessions, must_missing = _resolve(be, args.get("must", []))
@@ -298,11 +302,22 @@ def _call(name: str, args: dict, be: Backend) -> Any:
             if args.get("day"):
                 kw["day"] = args["day"]
             candidates = be.search_sessions(**kw)
+        if args.get("day"):
+            days = {_day_date(args["day"])}
+        else:
+            days = {_local_date(s["start"]) for s in candidates + must_sessions if s.get("start")}
+        lock = _schedule_lock(be, days)
         by_id = {s["id"]: s for s in candidates}
-        for s in must_sessions:
+        for s in lock["favorites"]:  # favorites join the candidates with a higher priority
+            by_id[s["id"]] = {**by_id.get(s["id"], s), "priority": FAVORITE_PRIORITY}
+        must_ids = {s["id"] for s in must_sessions}
+        for s in must_sessions + [s for s in lock["reserved"] if s["id"] not in must_ids]:
             by_id.setdefault(s["id"], s)
+        must_sessions += [s for s in lock["reserved"] if s["id"] not in must_ids]
         if not by_id:
             raise ToolError("No candidate sessions: pass candidate_ids from a search, or a query.")
+        if lock["blocked"]:
+            args = {**args, "blocked": list(args.get("blocked") or []) + lock["blocked"]}
         pool, pre_dropped = _apply_time_limits(be, list(by_id.values()), args, {s["id"] for s in must_sessions})
         if not pool:
             raise ToolError(f"Every candidate conflicts with the stated time limits: {pre_dropped}")
@@ -317,10 +332,16 @@ def _call(name: str, args: dict, be: Backend) -> Any:
         if pre_dropped and isinstance(result, dict):
             result.setdefault("dropped", [])
             result["dropped"] = pre_dropped + list(result["dropped"])
+        flagged = [s for s in pool if s.get("conflict")]
+        if flagged and isinstance(result, dict):  # a must-attend session breaks a stated limit: not feasible
+            result["feasible"] = False
+            result["limit_conflicts"] = [{**_brief(s, 0), "reason": s["conflict"]} for s in flagged]
+            result["warnings"] = list(result.get("warnings") or []) + [
+                f"{s.get('code') or s['id']} is must-attend but {s['conflict']}" for s in flagged]
         out = {"plan": result, "not_found": missing + must_missing}
         if args.get("use_profile", True):
             out["home_base_travel"] = _home_base_travel(be, result, args.get("prefer") or "fastest")
-        return out
+        return _with_lock(out, lock)
     if name == "get_profile":
         from atlas import profile
         return profile.load_profile()
@@ -338,9 +359,8 @@ def _call(name: str, args: dict, be: Backend) -> Any:
         out: dict[str, Any] = {"source": sched.get("source", "official_api"), "personal_time": sched.get("personalTime", [])}
         for key in ("reserved", "favorites"):
             rows = []
-            for x in sched.get(key) or []:
-                sid = x if isinstance(x, str) else (x.get("sessionId") or x.get("id")) if isinstance(x, dict) else None
-                s = be.get_session(sid) if sid else None
+            for sid in _schedule_ids(sched.get(key)):
+                s = be.get_session(sid)
                 rows.append(_brief(s, 0) if s else {"id": sid, "note": "not found in the loaded catalog"})
             out[key] = sorted(rows, key=lambda r: r.get("start") or "~")
         return {"schedule": out}
@@ -350,6 +370,92 @@ def _call(name: str, args: dict, be: Backend) -> Any:
             raise ToolError("session_ids is empty.")
         return {"result": be.add_favorites(ids)}
     raise ToolError(f"Unknown tool {name!r}.")
+
+
+FAVORITE_PRIORITY = 2  # official favorites outrank plain candidates (default priority 1)
+
+
+def _schedule_ids(items: Any) -> list[str]:
+    out = []
+    for x in items or []:
+        sid = x if isinstance(x, str) else (x.get("sessionId") or x.get("session_id") or x.get("id")) if isinstance(x, dict) else None
+        if sid:
+            out.append(sid)
+    return out
+
+
+def _lv(iso: str) -> Any:
+    """ISO timestamp as Las Vegas local time (naive input is taken as already local)."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+    return dt.astimezone(ZoneInfo("America/Los_Angeles")) if dt.tzinfo else dt
+
+
+def _local_date(iso: str) -> str:
+    return _lv(iso).date().isoformat()
+
+
+def _day_date(day: str) -> str:
+    d = day.strip().lower()
+    return EVENT_DAYS.get(d[:3], d[:10])
+
+
+def _signed_in() -> bool:
+    try:
+        from atlas import official_auth
+
+        return bool(official_auth.is_signed_in())
+    except Exception:
+        return False
+
+
+def _schedule_lock(be: Backend, days: set[str]) -> dict:
+    """Reserved and favorite sessions from the official schedule on `days`, when signed in.
+
+    Reserved sessions become must-attend and blocked windows; favorites become priority candidates.
+    The model cannot leave them out because the tools load them themselves.
+    """
+    lock: dict[str, Any] = {"reserved": [], "favorites": [], "blocked": [], "unresolved": [], "error": None}
+    if not days or not _signed_in():
+        return lock
+    try:
+        sched = be.get_schedule() or {}
+    except Exception as e:
+        lock["error"] = f"{type(e).__name__}: {e}"
+        return lock
+    reserved_ids = set()
+    for key in ("reserved", "favorites"):
+        for sid in _schedule_ids(sched.get(key)):
+            s = be.get_session(sid)
+            if not s or not s.get("start") or not s.get("end"):
+                if key == "reserved":
+                    lock["unresolved"].append(sid)
+                continue
+            if _local_date(s["start"]) not in days:
+                continue
+            if key == "reserved":
+                reserved_ids.add(s["id"])
+                lock["reserved"].append(s)
+            elif s["id"] not in reserved_ids:
+                lock["favorites"].append(s)
+    for s in lock["reserved"]:
+        lock["blocked"].append({"start": f"{_lv(s['start']):%H:%M}", "end": f"{_lv(s['end']):%H:%M}",
+                                "label": f"reserved {s.get('code') or s['id']}",
+                                "start_at": s["start"], "end_at": s["end"], "session_id": s["id"]})
+    return lock
+
+
+def _with_lock(out: dict, lock: dict) -> dict:
+    if lock["reserved"] or _signed_in():
+        out["locked_from_schedule"] = [s.get("code") or s["id"] for s in lock["reserved"]]
+    if lock["error"]:
+        out["schedule_lock_error"] = lock["error"] + " (official reservations were NOT applied)"
+    if lock["unresolved"]:
+        out["reservations_not_applied"] = {"ids": lock["unresolved"],
+                                           "reason": "not in the loaded catalog or without a start/end time"}
+    return out
 
 
 def _hm(value: str, ref_iso: str) -> "datetime":
@@ -379,8 +485,16 @@ def _apply_time_limits(be: Backend, sessions: list[dict], args: dict, must_ids: 
         st, en = datetime.fromisoformat(s["start"]), datetime.fromisoformat(s["end"])
         reason = None
         for w in blocked:
-            if w.get("start") and w.get("end") and st < _hm(w["end"], s["start"]) and en > _hm(w["start"], s["start"]):
-                reason = f"overlaps blocked time {w['start']}-{w['end']} {w.get('label', '')}".strip()
+            if w.get("session_id") and w["session_id"] == s["id"]:
+                continue  # a reservation's own window does not block itself
+            if w.get("start_at") and w.get("end_at"):  # absolute window (from the official schedule)
+                ws, we = datetime.fromisoformat(w["start_at"]), datetime.fromisoformat(w["end_at"])
+            elif w.get("start") and w.get("end"):
+                ws, we = _hm(w["start"], s["start"]), _hm(w["end"], s["start"])
+            else:
+                continue
+            if st < we and en > ws:
+                reason = f"overlaps blocked time {w.get('start', '')}-{w.get('end', '')} {w.get('label', '')}".strip()
                 break
         if not reason and back_by:
             limit = _hm(back_by, s["start"])
