@@ -12,6 +12,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
+from atlas.costs import append_usage
 from atlas.prompts import SYSTEM_PROMPT
 from atlas.tools import WRITE_TOOLS, Backend, bedrock_tool_config, dispatch
 
@@ -62,6 +63,7 @@ class Agent:
         backend: Backend | None = None,
         max_rounds: int = MAX_TOOL_ROUNDS,
         system_prompt: str = SYSTEM_PROMPT,
+        feature: str = "chat",
     ):
         self.client = client
         self.model_id = model_id or os.environ.get("NOVA_MODEL_ID") or DEFAULT_MODEL_ID
@@ -69,14 +71,15 @@ class Agent:
         self.backend = backend
         self.max_rounds = max_rounds
         self.system_prompt = system_prompt
+        self.feature = feature
         self.history: list[dict] = []
 
-    def _converse(self, messages: list[dict]) -> dict:
+    def _converse(self, messages: list[dict], rounds: int = 0) -> dict:
         if self.client is None:
             self.client = make_client()
         config = bedrock_tool_config()
         try:
-            return self.client.converse(
+            response = self.client.converse(
                 modelId=self.model_id,
                 system=[{"text": self.system_prompt}],
                 messages=messages,
@@ -91,13 +94,15 @@ class Agent:
                     t["toolSpec"]["name"].startswith(OFFICIAL_PREFIX) for t in config["tools"]):
                 raise
             disable_official_tools()
-            return self.client.converse(
+            response = self.client.converse(
                 modelId=self.model_id,
                 system=[{"text": self.system_prompt}],
                 messages=messages,
                 toolConfig=bedrock_tool_config(),
                 inferenceConfig=INFERENCE_CONFIG,
             )
+        append_usage(self.model_id, self.feature, response.get("usage") or {}, rounds)
+        return response
 
     def _run_tool(self, use: dict) -> tuple[dict, ToolCall]:
         name, args = use["name"], use.get("input") or {}
@@ -126,7 +131,7 @@ class Agent:
         trace: list[ToolCall] = []
         rounds = 0
         while True:
-            resp = self._converse(messages)
+            resp = self._converse(messages, rounds)
             msg = resp["output"]["message"]
             messages.append(msg)
             stop = resp.get("stopReason", "")
@@ -144,7 +149,7 @@ class Agent:
                 # Budget spent: answer the pending calls with an error and ask for a final answer.
                 blocks = [self._result_block(u, {"error": "Tool budget used up. Answer now with the results you already have."}, False) for u in uses]
                 messages.append({"role": "user", "content": blocks})
-                resp = self._converse(messages)
+                resp = self._converse(messages, rounds)
                 msg = resp["output"]["message"]
                 if any("toolUse" in b for b in msg["content"]):
                     # Still asking for tools: do not keep a dangling toolUse in history.

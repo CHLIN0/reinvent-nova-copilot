@@ -145,7 +145,7 @@ def _briefing() -> dict:
               + "In under 120 words: 1) name any conflict or tight transition the checks found, "
               "2) recommend what to do next (sessions to add on days with gaps, or what to fix), "
               "3) if my profile is missing my hotel or walking limit, ask for it in one line.")
-    out = _chat(prompt, allow_write=False)
+    out = _chat(prompt, allow_write=False, feature="briefing")
     out["text"], out["removed"] = guard.strip_unverified_feasibility(out["text"], out["trace"])
     out["schedule_diff"] = diff
     out["first_visit"] = first_visit
@@ -166,12 +166,16 @@ def _suggested(res) -> list[dict]:
     return [{k: s.get(k) for k in ("id", "code", "title", "start", "end", "venue")} for s in rows][:10]
 
 
-def _chat(message: str, allow_write: bool) -> dict:
+def _chat(message: str, allow_write: bool, feature: str = "chat") -> dict:
     with _state_lock:  # one conversation at a time; Bedrock calls are serialised
+        agent = _agent()
+        previous_feature = agent.feature
         _state["allow_write"] = allow_write
+        agent.feature = feature
         try:
-            res = _agent().ask(message)
+            res = agent.ask(message)
         finally:
+            agent.feature = previous_feature
             _state["allow_write"] = False
     plan = None
     for call in res.trace:

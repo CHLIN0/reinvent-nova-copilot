@@ -4,9 +4,12 @@ Bedrock is replaced by a scripted fake client; catalog/routing/planner by a stub
 """
 import asyncio
 import json
+from pathlib import Path
+import tempfile
 import unittest
+from unittest import mock
 
-from atlas import tools
+from atlas import costs, tools
 from atlas.agent import Agent
 from atlas.prompts import SYSTEM_PROMPT
 
@@ -112,6 +115,11 @@ class DispatcherTest(unittest.TestCase):
 
 class AgentLoopTest(unittest.TestCase):
     def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        patch = mock.patch.object(costs, "LEDGER_PATH", Path(tmp.name) / "costs.jsonl")
+        patch.start()
+        self.addCleanup(patch.stop)
         self.calls = []
         self.be = stub_backend(self.calls)
 
