@@ -1,0 +1,13 @@
+# M2r · Agent architecture research (Codex, read-only, memo)
+
+Write `docs/research/agent-architecture-2026-11.md`. Read the repo first (`README.md`, `atlas/*.py`, `web.py`, `docs/plans/2026-11-07-ux-overhaul.md`, `docs/ux-flow.md`). Dated sources for every external fact; a cost column for every option; mark anything you could not verify as "unverified". Finish within about 40 minutes of work; write the memo even if partial and list the gaps.
+
+BR's asks, verbatim in substance: evaluate Amazon Bedrock AgentCore, specifically for (a) the official re:Invent Events API/MCP integration and (b) our own service interface (REST today, plus our stdio MCP server; is there a better way?); route different tasks to different models and integrate the results; keep the user profile as Markdown with a *principle* layer (a harness: rules that adapt behaviour to the user's situation); treat the agenda as a database and ideally a knowledge base, cost-aware; use good, current frameworks so the AI solves tasks more cheaply, clearly and correctly.
+
+Cover, in this order:
+1. AgentCore today: Runtime, Gateway, Identity, Memory, Observability (and anything else that exists now): what each is, pricing, region availability, and how each would carry our tools, the official remote MCP (https://api.awsevents.com/mcp, Builder ID OAuth with loopback-only redirect), and the per-attendee profile. Say what breaks: the loopback-only OAuth constraint vs a hosted runtime.
+2. Our service interface: keep REST + our MCP server; expose through AgentCore Gateway; both; or something else. Attendee-visible benefit of each.
+3. Task → model routing: list our steps (search, plan, route, briefing, translate, explain, write actions) and for each the cheapest model/code that can do it correctly (Nova Micro/Lite/Pro, or deterministic code). Use token counts from `docs/costs.md` if present, otherwise estimate and say so.
+4. Profile as Markdown + principles: propose a format (`profile.md` with facts, and `principles.md` with if/then rules such as "walking limit → prefer fewest_steps"), where they live, how the prompt consumes them, and how this compares to the current JSON profile in `atlas/profile.py`.
+5. Agenda storage: current in-memory catalog vs local SQLite/JSON vs Bedrock Knowledge Bases vs a small local vector index; cost, freshness (the catalog changes during the event), and what a knowledge base buys for explainable recommendations (filter trace, related sessions). Recommend one for now and one for later.
+6. Recommended target architecture, with a migration path from today's code and the first two concrete steps (small PRs). Anything without an attendee-visible benefit is marked "not now".
