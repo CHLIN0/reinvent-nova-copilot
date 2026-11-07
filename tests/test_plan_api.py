@@ -1,6 +1,9 @@
+import json
 import os
 import re
+import shutil
 import stat
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -10,6 +13,7 @@ import web
 from atlas import catalog, official_auth, profile
 
 DIST = Path(__file__).resolve().parent.parent / "explorer" / "ui" / "dist" / "app.js"
+PLAN_CHANGED = "atlas:plan-changed"  # window event: Copilot dispatches it, Event Atlas re-reads /api/plan
 
 
 class PlanApiTests(unittest.TestCase):
@@ -77,6 +81,64 @@ class PlanApiTests(unittest.TestCase):
         web._change_plan("add", [self.ids[0]])
         path = Path(self.tmp.name) / "default.state.json"
         self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), 0o600)
+
+    def test_plan_saved_during_a_briefing_survives(self):
+        a, b = self.ids[:2]
+        sched = {"signed_in": True, "reserved": [{"id": b}], "favorites": []}
+
+        def schedule_read_while_user_adds():  # the user adds a session while the briefing reads GetSchedule
+            web._change_plan("add", [a])
+            return sched
+
+        patches = self.signed_in([b], []) + [
+            mock.patch.object(web, "_my_schedule", side_effect=schedule_read_while_user_adds),
+            mock.patch.object(web, "_chat", return_value={"text": "ok", "trace": []}),
+        ]
+        for p in patches:
+            p.start()
+        try:
+            out = web._briefing()
+        finally:
+            for p in patches:
+                p.stop()
+        state = profile.load_state()
+        self.assertTrue(out["first_visit"])
+        self.assertEqual(state["visits"], 1)
+        self.assertEqual(state["schedule"], {"reserved": [b], "favorites": []})
+        self.assertEqual([x["session_id"] for x in state["plan"]["local"]], [a])
+
+    def test_concurrent_state_updates_are_serialised(self):
+        import threading
+        import time
+
+        def slow_visit(state):
+            state["visits"] = int(state.get("visits") or 0) + 1
+            time.sleep(0.2)  # a plan write arriving now must wait, not be overwritten
+
+        t = threading.Thread(target=profile.update_state, args=(slow_visit,))
+        t.start()
+        time.sleep(0.05)
+        web._change_plan("add", [self.ids[0]])
+        t.join()
+        state = profile.load_state()
+        self.assertEqual(state["visits"], 1)
+        self.assertEqual([x["session_id"] for x in state["plan"]["local"]], [self.ids[0]])
+
+    def test_copilot_add_updates_atlas_without_reload(self):
+        """Copilot's add posts to /api/plan and fires the event the built Atlas bundle listens for."""
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node is not installed")
+        here = Path(__file__).resolve().parent
+        run = subprocess.run([node, str(here / "copilot_plan_event.mjs"), str(here.parent / "web" / "copilot.js")],
+                             capture_output=True, text=True, timeout=60)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        report = json.loads(run.stdout.strip().splitlines()[-1])
+        self.assertEqual(report["post"], {"action": "add", "session_ids": ["syn-0001"]})
+        self.assertEqual(report["events"], [PLAN_CHANGED])  # refresh event fired; no page reload
+        self.assertIn("Added 1 session", report["message"])
+        bundle = DIST.read_text(encoding="utf-8")
+        self.assertRegex(bundle, r'addEventListener\("' + PLAN_CHANGED + r'",')
 
     def test_built_atlas_has_no_browser_storage_for_the_plan(self):
         bundle = DIST.read_text(encoding="utf-8")

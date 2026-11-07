@@ -1,4 +1,4 @@
-import { ZONE, dayLabel, planLabel } from "./model.mjs";
+import { ZONE, dayLabel, planLabel, planMark } from "./model.mjs";
 import { sessionFacets } from "./session-facets.mjs";
 
 const MINUTE = 60_000;
@@ -380,15 +380,33 @@ export function createStackCalendar({ container, onSelect = () => {} }) {
       button.append(
         node("strong", "atlas-stack-count", `${members.length} 場`),
       );
+      const planned = new Map(plan.map((item) => [item.placement, item]));
       for (const record of members.slice(0, 2)) {
+        const item = planned.get(record.placement);
+        const preview = node(
+          "span",
+          "atlas-stack-preview-title",
+          `${planMark(item)}${record.session?.code ? record.session.code + " · " : ""}${record.session?.title || "未命名議程"}`,
+        );
+        if (item) preview.classList.add("plan-" + item.source);
+        button.append(preview);
+      }
+      // Every planned session in the group is counted, including ones beyond the two previews.
+      const inPlan = members
+        .map((record) => planned.get(record.placement))
+        .filter(Boolean);
+      if (inPlan.length)
         button.append(
           node(
             "span",
-            "atlas-stack-preview-title",
-            `${record.session?.code ? record.session.code + " · " : ""}${record.session?.title || "未命名議程"}`,
+            "atlas-stack-local-plan",
+            ["reserved", "favorite", "local"]
+              .map((source) => [source, inPlan.filter((i) => i.source === source).length])
+              .filter(([, n]) => n)
+              .map(([source, n]) => `${planMark({ source })}${planLabel({ source })} ${n}`)
+              .join(" · "),
           ),
         );
-      }
       if (!untimed)
         button.append(
           node("span", "atlas-stack-preview-time", timeRange(members[0])),

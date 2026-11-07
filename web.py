@@ -119,18 +119,21 @@ def _my_schedule() -> dict:
 
 def _briefing() -> dict:
     """Welcome-back: compare the official schedule with the last saved snapshot, then ask Nova for a short plan."""
-    state = profile.load_state()
     sched = _my_schedule() if official_auth.is_signed_in() else {"signed_in": False}
-    diff = None
-    if sched.get("signed_in"):
-        now = {"reserved": [r["id"] for r in sched["reserved"]], "favorites": [r["id"] for r in sched["favorites"]]}
-        before = state.get("schedule") or {}
-        diff = {k: {"added": [i for i in now[k] if i not in (before.get(k) or [])],
-                    "removed": [i for i in (before.get(k) or []) if i not in now[k]]} for k in now} if before else None
-        state["schedule"] = now
-    first_visit = not state.get("visits")
-    state["visits"] = int(state.get("visits") or 0) + 1
-    profile.save_state(state)
+
+    def visit(state: dict):  # locked read-modify-write: never overwrites a plan saved meanwhile
+        diff = None
+        if sched.get("signed_in"):
+            now = {"reserved": [r["id"] for r in sched["reserved"]], "favorites": [r["id"] for r in sched["favorites"]]}
+            before = state.get("schedule") or {}
+            diff = {k: {"added": [i for i in now[k] if i not in (before.get(k) or [])],
+                        "removed": [i for i in (before.get(k) or []) if i not in now[k]]} for k in now} if before else None
+            state["schedule"] = now
+        first_visit = not state.get("visits")
+        state["visits"] = int(state.get("visits") or 0) + 1
+        return diff, first_visit
+
+    diff, first_visit = profile.update_state(visit)
     prompt = ("Brief me as I open the app (this is not a new question). Call get_profile and get_my_schedule. "
               + ("This is my first visit. " if first_visit else f"Since my last visit my official schedule changed: {json.dumps(diff)}. " if diff else "")
               + "In under 120 words: 1) check_itinerary on my reserved sessions day by day and name any conflict or tight transition, "
