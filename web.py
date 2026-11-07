@@ -140,7 +140,7 @@ def _my_schedule() -> dict:
 
 def _briefing() -> dict:
     """Welcome-back: compare the official schedule with the last saved snapshot, then ask Nova for a short plan."""
-    from atlas import guard
+    from atlas import format as answer_format, guard
 
     sched = _my_schedule() if official_auth.is_signed_in() else {"signed_in": False}
 
@@ -171,6 +171,7 @@ def _briefing() -> dict:
               "3) if my profile is missing my hotel or walking limit, ask for it in one line.")
     out = _chat(prompt, allow_write=False, feature="briefing")
     out["text"], out["removed"] = guard.strip_unverified_feasibility(out["text"], out["trace"])
+    out["text"] = answer_format.cap_words(out["text"])  # the guard may append a sentence
     out["schedule_diff"] = diff
     out["first_visit"] = first_visit
     return out
@@ -201,12 +202,14 @@ def _chat(message: str, allow_write: bool, feature: str = "chat") -> dict:
         finally:
             agent.feature = previous_feature
             _state["allow_write"] = False
+    from atlas import format as answer_format
+
     plan = None
     for call in res.trace:
         if call.name == "plan_itinerary" and call.ok:
             plan = call.result
     return {
-        "text": res.text,
+        "text": answer_format.format_answer(res.text, res.trace),
         "rounds": res.rounds,
         "trace": [{"name": c.name, "input": c.input, "ok": c.ok, "confirmed": c.confirmed, "result": _short(c.result)}
                   for c in res.trace],

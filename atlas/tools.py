@@ -78,7 +78,7 @@ TOOL_SPECS: list[dict[str, Any]] = [
                 "day": {"type": "string", "description": "Day to plan, e.g. 'Tue' or an ISO date."},
                 "prefer": _PREFER,
                 "buffer_min": _BUFFER,
-                "max_sessions": {"type": "integer", "minimum": 1, "maximum": 10, "description": "Max sessions in the plan. Default 6."},
+                "max_sessions": {"type": "integer", "minimum": 1, "maximum": 10, "description": "Max sessions in the plan. Omit it unless the attendee asked for a number: the default follows the free windows of at least 60 minutes between their fixed sessions."},
                 "use_profile": {"type": "boolean", "description": "Add hotel-to-first-session and last-session-to-hotel travel from the attendee profile. Default true."},
                 "back_by": {"type": "string", "description": "Latest time to be back at the hotel (home base), 'HH:MM' local time, e.g. '17:15' for a 17:30 call in the room. Sessions that would make this impossible are dropped."},
                 "blocked": {"type": "array", "items": {"type": "object", "properties": {"start": {"type": "string"}, "end": {"type": "string"}, "label": {"type": "string"}}}, "description": "Time windows the attendee is busy ('HH:MM' local), e.g. a lunch meeting. Overlapping sessions are dropped."},
@@ -321,13 +321,14 @@ def _call(name: str, args: dict, be: Backend) -> Any:
         pool, pre_dropped = _apply_time_limits(be, list(by_id.values()), args, {s["id"] for s in must_sessions})
         if not pool:
             raise ToolError(f"Every candidate conflicts with the stated time limits: {pre_dropped}")
+        free = _free_windows(pool, must_sessions, days, args)
         result = be.plan_itinerary(
             pool,
             must=[s["id"] for s in must_sessions],
             day=args.get("day"),
             prefer=args.get("prefer") or "fastest",
             buffer_min=int(args.get("buffer_min", 10)),
-            max_sessions=int(args.get("max_sessions", 6)),
+            max_sessions=int(args["max_sessions"]) if args.get("max_sessions") else _default_max_sessions(free, must_sessions, days),
         )
         if pre_dropped and isinstance(result, dict):
             result.setdefault("dropped", [])
@@ -339,7 +340,7 @@ def _call(name: str, args: dict, be: Backend) -> Any:
             result["limit_conflicts"] = [{**_brief(s, 0), "reason": s["conflict"]} for s in flagged]
             result["warnings"] = list(result.get("warnings") or []) + [
                 f"{s.get('code') or s['id']} is must-attend but {s['conflict']}" for s in flagged]
-        out = {"plan": result, "not_found": missing + must_missing}
+        out = {"plan": result, "not_found": missing + must_missing, "free_windows": free}
         if args.get("use_profile", True):
             out["home_base_travel"] = _home_base_travel(be, result, args.get("prefer") or "fastest")
         return _with_lock(out, lock)
@@ -463,6 +464,51 @@ def _with_lock(out: dict, lock: dict) -> dict:
         out = {"reservations_not_applied": {"ids": ids, "warning": warning,
                                             "reason": "not in the loaded catalog or without a start/end time"}, **out}
     return out
+
+
+FREE_WINDOW_MIN = 60
+MAX_DEFAULT_SESSIONS = 8
+
+
+def _free_windows(pool: list[dict], fixed: list[dict], days: set[str], args: dict) -> list[dict]:
+    """Gaps of at least an hour between the fixed sessions (must-attend and reserved) and blocked times,
+    within the span of the day's candidate sessions (ending at back_by when given). Local 'HH:MM' times."""
+    from datetime import timedelta
+
+    out = []
+    for day in sorted(days):
+        on_day = [s for s in pool + fixed if s.get("start") and s.get("end") and _local_date(s["start"]) == day]
+        if not on_day:
+            continue
+        day_start = min(_lv(s["start"]) for s in on_day)
+        day_end = max(_lv(s["end"]) for s in on_day)
+        if args.get("back_by"):
+            day_end = min(day_end, _hm(args["back_by"], day_start.isoformat()))
+        busy, seen = [], set()
+        for s in fixed:
+            if s.get("start") and s.get("end") and _local_date(s["start"]) == day and s["id"] not in seen:
+                seen.add(s["id"])
+                busy.append((_lv(s["start"]), _lv(s["end"])))
+        for w in args.get("blocked") or []:
+            if w.get("session_id"):
+                continue  # reservations are already in `fixed`
+            if w.get("start") and w.get("end"):
+                busy.append((_hm(w["start"], day_start.isoformat()), _hm(w["end"], day_start.isoformat())))
+        cursor = day_start
+        for st, en in sorted(busy) + [(day_end, day_end)]:
+            st = min(st, day_end)
+            if st - cursor >= timedelta(minutes=FREE_WINDOW_MIN):
+                out.append({"day": day, "start": f"{cursor:%H:%M}", "end": f"{st:%H:%M}",
+                            "minutes": int((st - cursor).total_seconds() // 60)})
+            cursor = max(cursor, en)
+    return out
+
+
+def _default_max_sessions(free: list[dict], fixed: list[dict], days: set[str]) -> int:
+    """The fixed sessions plus one session per free hour, between 1 and 8."""
+    fixed_n = len({s["id"] for s in fixed if s.get("start") and _local_date(s["start"]) in days})
+    slots = sum(w["minutes"] // FREE_WINDOW_MIN for w in free)
+    return max(1, min(MAX_DEFAULT_SESSIONS, fixed_n + slots))
 
 
 def _hm(value: str, ref_iso: str) -> "datetime":
