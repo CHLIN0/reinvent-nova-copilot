@@ -31,6 +31,10 @@ Prompt approach: it keeps the Nova Pro prompt structure and re:Invent veteran at
 
 `explorer/` is the author's Event Atlas agenda explorer (calendars + 3D campus), built earlier in the hackathon period on the same official API and now served by `web.py` in the same process and origin. Third-party components are listed in `explorer/THIRD_PARTY_NOTICES.md` (map data (c) OpenStreetMap contributors, ODbL). Rebuild its UI with `cd explorer/ui && npm ci && npm run build`.
 
+## Design notes
+
+`docs/ux-flow.md` reviews each step of the attendee flow (sign-in, first screen, discover, plan, act, return visits, trust): the design we consider best practice, what is built, and what is next. `docs/routing.md` covers the routing and itinerary algorithms.
+
 ## Architecture
 
 ```
