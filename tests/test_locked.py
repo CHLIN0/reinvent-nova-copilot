@@ -175,11 +175,29 @@ class LockedReservationsTest(Base):
         self.assertNotIn("locked_from_schedule", out)
         self.assertEqual(calls, [])
 
-    def test_schedule_failure_is_reported_not_hidden(self):
+    def test_schedule_failure_is_a_tool_error_not_an_unlocked_plan(self):
         be = fixture_backend(catalog.CatalogError("official_rate_limited"))
-        out, ok = tools.dispatch("plan_itinerary", {"candidate_ids": wednesday_ids(), "day": "Wed", "use_profile": False}, be)
+        for name, args in (("plan_itinerary", {"candidate_ids": wednesday_ids(), "day": "Wed", "use_profile": False}),
+                           ("check_itinerary", {"session_ids": ["SYN-SEC107"]})):
+            out, ok = tools.dispatch(name, args, be)
+            self.assertFalse(ok, out)
+            self.assertNotIn("plan", out)
+            self.assertIn("reservations could not be loaded", out["error"])
+            self.assertIn("official_rate_limited", out["error"])
+        trace = [ToolCall("plan_itinerary", {}, False, out)]
+        _, removed = guard.strip_unverified_feasibility("Your Wednesday is feasible.", trace)
+        self.assertEqual(removed, ["Your Wednesday is feasible."])
+
+    def test_limit_conflicts_ignore_must_sessions_off_the_plan_day(self):
+        be = fixture_backend({"reserved": [], "favorites": [], "personalTime": []})
+        off_day = catalog.get_session("syn-0018", source="fixture")
+        self.assertFalse(off_day["start"].startswith("2026-12-02"))
+        out, ok = tools.dispatch("plan_itinerary", {"candidate_ids": ["syn-0011"], "must": ["syn-0018"], "day": "Wed",
+                                                    "back_by": "14:00", "use_profile": False}, be)
         self.assertTrue(ok, out)
-        self.assertIn("NOT applied", out["schedule_lock_error"])
+        self.assertNotIn("limit_conflicts", out["plan"])
+        self.assertTrue(out["plan"]["feasible"])
+        self.assertNotIn("syn-0018", [s["id"] for s in out["plan"]["chosen"]])
 
     def test_auth_failure_is_tolerated(self):
         class Broken:
