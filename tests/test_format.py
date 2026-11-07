@@ -68,6 +68,24 @@ class NoAdditionTest(unittest.TestCase):
         self.assertEqual(fmt.add_no_addition("Done.", both),
                          "Done.\nNo additional session fits around your must-attend sessions on Tuesday.\n" + NO_WED)
 
+    def test_stated_day_covers_only_itself(self):
+        """Codex on e4acb09: Tuesday stated plainly does not cover Wednesday's false claim."""
+        tue = [{"id": "syn-0002", "code": "SYN-AI202", "start": "2026-12-01T09:00:00-08:00"}]
+        trace = [plan_call(tue, locked=("SYN-AI202",), day="Tue"), plan_call([KEY02, AI407])]
+        text = "No additional session fits around your reservations on Tuesday. Wednesday has two added sessions."
+        self.assertEqual(fmt.add_no_addition(text, trace), text + "\n" + NO_WED)
+        both = "No additional session fits around your reservations on Tuesday or Wednesday."
+        self.assertEqual(fmt.add_no_addition(both, trace), both)
+        dayless = "No additional session fits around your reservations."
+        self.assertEqual(fmt.add_no_addition(dayless, trace),
+                         dayless + "\nNo additional session fits around your reservations on Tuesday.\n" + NO_WED)
+        self.assertEqual(fmt.add_no_addition(dayless, trace[1:]), dayless)  # one plan: a dayless sentence covers it
+
+    def test_chinese_stated_day(self):
+        trace = [plan_call([KEY02, AI407])]
+        text = "週三除了你的預約，沒有其他場次排得進去。"
+        self.assertEqual(fmt.add_no_addition(text, trace), text)
+
     def test_no_plan_no_change(self):
         self.assertEqual(fmt.add_no_addition("I added two sessions.", []), "I added two sessions.")
 

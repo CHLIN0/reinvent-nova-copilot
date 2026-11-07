@@ -83,18 +83,38 @@ def no_addition_sentence(day: int | None, reservations: bool, cjk: bool = False)
                               base="reservations" if reservations else "must-attend sessions")
 
 
+_DAY_NAME = re.compile(r"\b(mon|tue|wed|thu|fri|sat|sun)(?:day|s|sday|nesday|rs|rsday|urday)?\b|週([一二三四五六日])", re.I)
+
+
+def _stated_days(text: str, n_plans: int) -> tuple[set[int], bool]:
+    """Weekdays named in the answer's existing no-addition sentences, and whether one names no day
+    (which covers the day only when a single plan was made)."""
+    days, dayless = set(), False
+    for m in _NO_ADDITION_MARK.finditer(text):
+        start = max([b.end() for b in _END.finditer(text, 0, m.start())] or [0])
+        nxt = _END.search(text, m.end())
+        named = {[d[:3].lower() for d in _WEEKDAY].index(g[0].lower()) if g[0] else "一二三四五六日".index(g[1])
+                 for g in _DAY_NAME.findall(text[start:nxt.end() if nxt else len(text)])}
+        days, dayless = days | named, dayless or (not named and n_plans == 1)
+    return days, dayless
+
+
 def add_no_addition(text: str, trace: list) -> str:
     """Append the plain statement, one line per day whose latest plan kept only the reservations and
-    must-attend sessions, unless the answer already says so. Nothing in the text is removed."""
-    if not text or _NO_ADDITION_MARK.search(text):
+    must-attend sessions, unless an existing no-addition sentence already names that day. Nothing in
+    the text is removed."""
+    plans = _latest_plans(trace)
+    if not text or not plans:
         return text
+    stated, dayless = _stated_days(text, len(plans))
     lines = []
-    for result, args in _latest_plans(trace):
+    for result, args in plans:
         base = {c for c in result.get("locked_from_schedule") or [] if isinstance(c, str)}
         must = {c for c in args.get("must") or [] if isinstance(c, str)}
         chosen = [r for r in result["plan"].get("chosen") or [] if isinstance(r, dict)]
-        if all(_keys(r) & (base | must) for r in chosen):
-            lines.append(no_addition_sentence(_day_of(result["plan"], args), bool(base), _is_cjk(text)))
+        day = _day_of(result["plan"], args)
+        if all(_keys(r) & (base | must) for r in chosen) and not dayless and day not in stated:
+            lines.append(no_addition_sentence(day, bool(base), _is_cjk(text)))
     return "\n".join([text] + lines) if lines else text
 
 
