@@ -88,6 +88,7 @@ M0 first (T0+T1+T2 → T3+T4+T5+T10 → T6+T7+T8 → T9). The three spikes (M2a,
 ### T4 · Answers that fit a panel (fixes P5)
 - Plan answers = lines for leave hotel / sessions / back; one line per transition; dropped list collapsed to "N dropped (3 shown)"; no Markdown symbols; yes/no questions answered in the first sentence; `max_sessions` derived from free windows.
 - Acceptance: 8-question real-catalog battery; each answer ≤ 160 words; first-sentence rule and no `**` checked by test.
+- Added 2026-11-07 from the live T2 check: when the planner keeps only the reservations and adds nothing (search returned 10 candidates, none fit), the answer must say "no additional session fits" instead of "feasible with the added sessions". Include this case in the battery.
 - Must not: change tool contracts.
 
 ### T5 · Sessions that survive time (fixes P7)
