@@ -1,6 +1,6 @@
 # Roadmap: re:Invent Nova Copilot (post-submission)
 
-Status: **v2.2, approved by BR on 2026-11-07 with adjustments (section M2). M0 T0/T1/T2 merged to main 2026-11-07 (PRs #1–#3, Codex MERGE on each, verified on BR's account); research memos in `docs/research/`; wave 2: T5 (PR #5) and T10 (PR #4) merged 2026-11-07 after Codex MERGE and host verification on BR's account; T3 and T4 proposed as session cards.** Defaults BR did not object to: T3 opens on the first conference day until 2026-11-30, then today; T8 keeps the CLI and deletes `/copilot`; T7's real cancel waits for BR's go on the day; M2a spend cap USD 20. v1 (the UX overhaul) is now Milestone 0 of this roadmap.
+Status: **v2.2, approved by BR on 2026-11-07 with adjustments (section M2). M0 T0/T1/T2 merged to main 2026-11-07 (PRs #1–#3, Codex MERGE on each, verified on BR's account); research memos in `docs/research/`; wave 2: T5 (PR #5) and T10 (PR #4) merged 2026-11-07 after Codex MERGE and host verification on BR's account; wave 3: T3 (PR #6) and T4 (PR #7) merged 2026-11-07 after Codex MERGE and host verification on BR's account; next: T6, T7, T8, then the T9 gate.** Defaults BR did not object to: T3 opens on the first conference day until 2026-11-30, then today; T8 keeps the CLI and deletes `/copilot`; T7's real cancel waits for BR's go on the day; M2a spend cap USD 20. v1 (the UX overhaul) is now Milestone 0 of this roadmap.
 
 ## 1. What BR wants (his words, condensed; the roadmap must not drift from these)
 
@@ -85,12 +85,14 @@ M0 first (T0+T1+T2 → T3+T4+T5+T10 → T6+T7+T8 → T9). The three spikes (M2a,
 - After sign-in: first conference day (today during the event) in day view, reserved sessions highlighted, gaps marked, briefing at the top of the page. Catalog browsing = "Explore" tab, filters collapsed. One sign-in control; Copilot is a persistent side panel with a toggle.
 - Acceptance: screenshot in BR's Chrome: first paint shows BR's Monday (CMP321-R, INV538, GHJ308-S-R) and the gaps; no breakfast/booth cards unless Explore is opened.
 - Must not: restyle; remove the five-day view; add animations.
+- Status 2026-11-07: merged (PR #6) after three Codex rounds (every positive gap shown, plan-driven tab switch, sign-in control recovers after a transient status failure, calendar date follows the chosen day). Verified on BR's account: Monday first paint with 3 reserved, 2 favorites, two labelled gaps, briefing inline, docked panel. Open point: after the event (from Dec 5) the view returns to 11/30.
 
 ### T4 · Answers that fit a panel (fixes P5)
 - Plan answers = lines for leave hotel / sessions / back; one line per transition; dropped list collapsed to "N dropped (3 shown)"; no Markdown symbols; yes/no questions answered in the first sentence; `max_sessions` derived from free windows.
 - Acceptance: 8-question real-catalog battery; each answer ≤ 160 words; first-sentence rule and no `**` checked by test.
 - Added 2026-11-07 from the live T2 check: when the planner keeps only the reservations and adds nothing (search returned 10 candidates, none fit), the answer must say "no additional session fits" instead of "feasible with the added sessions". Include this case in the battery.
 - Must not: change tool contracts.
+- Status 2026-11-07: merged (PR #7). Host decision after four Codex rounds on a 460-line regex rewriter: the post-processor must never delete model text (strip Markdown, append the no-addition sentence per day, collapse only a single sentence of >3 dropped codes); no word cap in code, length is the prompt's job and the battery asserts it. Default `max_sessions` = fixed sessions + one per free hour (clamped 1–8), not the literal window count, which could never add a session. A prompt rule "do not pass max_sessions" made Nova Pro fail every signed-in briefing with a tool-use ModelErrorException (6/6) and was removed; the tool spec keeps the guidance. Prompt-adherence gaps for T9: the briefing lists every missing profile field instead of one question; a combined "can I make it + plan my day" question answered only the travel part; reserved sessions in session cards still show RSVP (T7).
 
 ### T5 · Sessions that survive time (fixes P7)
 - Token expiry shown, re-sign-in prompt before expiry, refresh token where allowed; restart message explains the sign-out.
