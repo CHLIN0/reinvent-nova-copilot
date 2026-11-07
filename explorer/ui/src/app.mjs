@@ -36,6 +36,8 @@ import {
   localDate,
   localClock,
   makePlanItem,
+  planLabel,
+  planMark,
   abstractHash,
   validateCatalog,
   observationLabel,
@@ -54,20 +56,8 @@ const button = (label, action, cls = "") => {
   b.addEventListener("click", action);
   return b;
 };
-let storage, browserDb;
-try {
-  storage = localStorage;
-} catch {
-  storage = null;
-}
-try {
-  browserDb = window.indexedDB;
-} catch {}
-const planStore = createPlanStore({
-  indexedDB: browserDb,
-  legacyStorage: storage,
-});
-const FILTER_KEY = "event-atlas.filters.v1";
+// The plan lives on the server (/api/plan); filters live in the URL hash only.
+const planStore = createPlanStore();
 const SIGN_IN_RETURN_KEY = "event-atlas.sign-in-return.v1";
 // This stores only the current calendar view, never an authorization URL or token.
 if (new URLSearchParams(location.search).get("signin") === "complete") {
@@ -83,12 +73,8 @@ if (new URLSearchParams(location.search).get("signin") === "complete") {
   );
 }
 const FILTER_DIMENSIONS = DISCOVERY_DIMENSIONS.filter((key) => key !== "dates");
-let savedFilters = {};
-try {
-  savedFilters = JSON.parse(storage?.getItem(FILTER_KEY) || "{}");
-} catch {}
 const state = {
-  ...normaliseCalendarFilters(savedFilters),
+  ...normaliseCalendarFilters({}),
   view: "week",
   layout: "stack",
   day: DAYS[0],
@@ -107,7 +93,7 @@ let records = [],
   readerVersion = 0,
   weekScroll = null,
   dayScroll = null;
-let storageBlocked = true,
+let planUnavailable = true,
   planRefresh = 0,
   planError = "";
 const notify = (message) => {
@@ -147,14 +133,6 @@ function writeURL() {
     for (const value of state[k]) p.append(k, value);
   history.replaceState(null, "", "#" + p);
 }
-function saveFilters() {
-  const value = { ...normaliseCalendarFilters(state), planOnly: false };
-  try {
-    storage?.setItem(FILTER_KEY, JSON.stringify(value));
-  } catch {
-    notify("目前條件只在這個分頁保留，瀏覽器無法保存偏好。");
-  }
-}
 
 function scrollPane() {
   return [...$("calendar").querySelectorAll("*")].find(
@@ -186,8 +164,29 @@ function visible() {
     ? result.filter((r) => inDay(r, state.day))
     : result.filter((r) => DAYS.some((day) => inDay(r, day)));
 }
+function planItem(r) {
+  return state.plan.find((p) => p.placement === r.placement);
+}
 function isPlanned(r) {
-  return state.plan.some((p) => p.placement === r.placement);
+  return !!planItem(r);
+}
+// Server items carry the session id; use the loaded record's own placement so marks always line up.
+function canonicalPlan(items) {
+  const byId = new Map(records.map((r) => [r.session.session_id, r]));
+  return items.map((p) => {
+    const r = byId.get(p.session_id);
+    return r ? { ...p, placement: r.placement, key: r.key } : p;
+  });
+}
+function planButtonText(r) {
+  const p = planItem(r);
+  if (!p) return "＋ 加入我的安排";
+  if (p.source === "reserved") return "✓ 官方已預約 · 請在 AWS Events 變更";
+  if (p.source === "favorite") return "★ 官方收藏 · 請在 AWS Events 變更";
+  return "● 已在我的安排 · 移除";
+}
+function planToggleDisabled(r) {
+  return planUnavailable || ["reserved", "favorite"].includes(planItem(r)?.source);
 }
 function timeText(r) {
   return r.times
@@ -242,7 +241,7 @@ const calendar = new Calendar($("calendar"), {
     if (!r) return { domNodes: [] };
     const n = el("div", "agenda-card");
     n.append(
-      el("span", "event-code", `${isPlanned(r) ? "✓ " : ""}${r.session.code}`),
+      el("span", "event-code", `${planMark(planItem(r))}${r.session.code}`),
       el(
         "span",
         "event-time",
@@ -269,6 +268,9 @@ const calendar = new Calendar($("calendar"), {
       "calendar-event",
       info.event.id === state.selection ? "is-selected" : "",
       isPlanned(byKey.get(info.event.id) || {}) ? "is-planned" : "",
+      planItem(byKey.get(info.event.id) || {})
+        ? "plan-" + planItem(byKey.get(info.event.id)).source
+        : "",
     ].join(" "),
   eventDidMount: (info) => {
     const r = byKey.get(info.event.id);
@@ -276,7 +278,7 @@ const calendar = new Calendar($("calendar"), {
     info.el.style.setProperty("--venue-color", r.venue?.color || "#667580");
     info.el.setAttribute(
       "aria-label",
-      `${r.session.code} ${r.session.title}，${timeText(r)}，${r.venue?.name || r.session.venue || "會場未定位"}${isPlanned(r) ? "，已加入本機安排" : ""}`,
+      `${r.session.code} ${r.session.title}，${timeText(r)}，${r.venue?.name || r.session.venue || "會場未定位"}${isPlanned(r) ? "，" + planLabel(planItem(r)) : ""}`,
     );
     info.el.dataset.record = r.key;
     info.el.title = `${r.session.title}\n${timeText(r)}\n${r.session.location || ""}`;
@@ -311,7 +313,6 @@ const filterControls = createFilterControls({
   plan: () => state.plan,
   onChange: (patch) => {
     Object.assign(state, patch);
-    saveFilters();
     renderCalendar();
   },
 });
@@ -525,13 +526,9 @@ async function renderReader(r) {
       ),
     );
   const actions = el("div", "detail-actions");
-  const planButton = button(
-    isPlanned(r) ? "✓ 已在我的安排 · 移除" : "＋ 加入我的安排",
-    () => togglePlan(r),
-    "primary",
-  );
+  const planButton = button(planButtonText(r), () => togglePlan(r), "primary");
   planButton.dataset.planToggle = "";
-  planButton.disabled = storageBlocked;
+  planButton.disabled = planToggleDisabled(r);
   actions.append(
     planButton,
     button(
@@ -647,17 +644,15 @@ async function renderReader(r) {
   }
 }
 async function changePlan(item, action) {
-  if (storageBlocked) {
-    notify("本機安排資料尚未能安全讀取，暫不覆寫。");
+  if (planUnavailable) {
+    notify("「我的安排」尚未讀取完成，暫不修改。");
     return;
   }
   try {
     await planStore.update(item, action);
-    // Read again after commit: another tab may already have committed next.
     await refreshPlan();
-    planChannel?.postMessage("changed");
   } catch (error) {
-    notify(error.message || "本機儲存失敗，這次安排未保存；目前安排保持原樣。");
+    notify(error.message || "這次安排未保存；目前安排保持原樣。");
   }
 }
 function togglePlan(r) {
@@ -667,37 +662,38 @@ function refreshPlanButton() {
   const r = selectedRecord();
   const b = $("reader").querySelector("[data-plan-toggle]");
   if (r && b) {
-    b.textContent = isPlanned(r) ? "✓ 已在我的安排 · 移除" : "＋ 加入我的安排";
-    b.disabled = storageBlocked;
+    b.textContent = planButtonText(r);
+    b.disabled = planToggleDisabled(r);
   }
 }
 async function refreshPlan() {
   const request = ++planRefresh;
   try {
-    const items = await planStore.load();
+    const items = canonicalPlan(await planStore.load());
     if (request !== planRefresh) return;
     const changed =
-      storageBlocked || JSON.stringify(items) !== JSON.stringify(state.plan);
+      planUnavailable || JSON.stringify(items) !== JSON.stringify(state.plan);
     state.plan = items;
-    storageBlocked = false;
+    planUnavailable = false;
+    const officialError =
+      planStore.official?.status === "error"
+        ? "官方行程暫時無法讀取；「我的安排」目前只列出本機挑選。"
+        : "";
     if (planError && $("notice").textContent === planError) notify("");
-    planError = "";
+    planError = officialError;
+    if (officialError) notify(officialError);
     if (changed) renderCalendar();
     refreshPlanButton();
   } catch (error) {
     if (request !== planRefresh) return;
-    storageBlocked = true;
-    planError = error.message || "本機安排無法安全讀取，暫不寫入。";
+    planUnavailable = true;
+    planError = error.message || "暫時無法讀取「我的安排」；請稍後再試。";
     notify(planError);
     refreshPlanButton();
   }
 }
-let planChannel;
-try {
-  planChannel = new BroadcastChannel("reinvent.local-plan.v2");
-  planChannel.onmessage = () => refreshPlan();
-} catch {}
-addEventListener("focus", () => refreshPlan());
+// Nova Copilot (same page) dispatches this after it changes the plan or the official schedule.
+addEventListener("atlas:plan-changed", () => refreshPlan());
 addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") refreshPlan();
 });
@@ -725,7 +721,6 @@ function spotlight(id, focus = false) {
       "篩選此會場",
       () => {
         state.venues = [id];
-        saveFilters();
         renderCalendar();
       },
       "venue-filter-button",
@@ -830,7 +825,9 @@ function renderPlanMissing() {
           "",
           "這筆安排尚未對照目前的官方資料來源；不代表已取消或從官方目錄移除。",
         ),
-        button("移除這筆本機安排", () => changePlan(p, "remove")),
+        p.source === "local"
+          ? button("移除這筆本機安排", () => changePlan(p, "remove"))
+          : el("p", "", `${planLabel(p)}；請在 AWS Events 變更。`),
       );
       return n;
     }),
@@ -846,7 +843,6 @@ for (const k of ["query", "from", "to"])
     clearTimeout(debounce);
     debounce = setTimeout(
       () => {
-        saveFilters();
         renderCalendar();
       },
       k === "query" ? 150 : 0,
@@ -856,7 +852,6 @@ $("filters").onsubmit = (e) => e.preventDefault();
 $("clear").onclick = () => {
   Object.assign(state, normaliseFilters());
   syncControls();
-  saveFilters();
   layout();
   renderCalendar();
 };
@@ -913,10 +908,11 @@ async function loadCatalog() {
     $("freshness").textContent =
       `${d.sessions.length.toLocaleString()} 場 · ${observationLabel(meta.catalog_observed_at)}${meta.stale ? " · 離線快取" : ""}`;
     if (meta.stale) notify("目前顯示上次成功的官方議程，來源暫時無法更新。");
-    else if (!storageBlocked) notify("");
+    else if (!planError) notify("");
     renderCalendar();
     if (selectedRecord()) renderReader(selectedRecord());
     renderPlanMissing();
+    void refreshPlan();
   } catch (error) {
     if (["sign_in_required", "not_registered"].includes(error.code))
       officialConnection.requireSignIn(error.code);
@@ -972,7 +968,6 @@ addEventListener("pagehide", (event) => {
   calendar.destroy();
   stack.destroy();
   filterControls.destroy();
-  planChannel?.close();
 });
 addEventListener("pageshow", (event) => {
   if (event.persisted) {

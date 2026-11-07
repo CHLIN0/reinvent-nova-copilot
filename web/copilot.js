@@ -79,56 +79,16 @@
     const msg = el("div", "nc-note"); add.addEventListener("click", () => addToAtlas(plan.chosen || [], msg)); box.append(add, msg);
   }
 
-  // Writes into Event Atlas's own local plan (IndexedDB "reinvent.local-plan.v2"), using the item format of Atlas's makePlanItem.
-  async function atlasItems(ids) {
-    const cat = await api("/api/catalog");
-    const byId = new Map((cat.sessions || []).map(s => [s.session_id, s]));
-    const items = [];
-    for (const id of ids) {
-      const s = byId.get(id); if (!s) continue;
-      items.push({placement: JSON.stringify([s.source, s.session_id, s.start_local, s.end_local]), key: JSON.stringify([s.source, s.session_id]),
-        code: String(s.code || ""), title: String(s.title || ""), start: String(s.start_local || ""), end: String(s.end_local || ""), location: String(s.location || ""), addedAt: new Date().toISOString()});
-    }
-    return items;
-  }
-  const PLAN_KEYS = ["placement", "key", "code", "title", "start", "end", "location"];
-  function atlasReady() {  // wait until Atlas finished its own startup (catalog rendered) before touching its database
-    return new Promise(res => { const t0 = Date.now(); const tick = () => { const n = document.getElementById("visible-count"); if ((n && n.textContent.trim() && n.textContent.trim() !== "0") || Date.now() - t0 > 12000) res(); else setTimeout(tick, 250); }; tick(); });
-  }
-  async function writeAtlas(items) {
-    const bad = items.find(i => PLAN_KEYS.some(k => typeof i[k] !== "string"));
-    if (bad) throw new Error("session record has a non-text field: " + JSON.stringify(bad).slice(0, 120));
-    await atlasReady();
-    const db = await new Promise((res, rej) => { const r = indexedDB.open("reinvent.local-plan.v2", 1); r.onupgradeneeded = () => { if (!r.result.objectStoreNames.contains("plan")) r.result.createObjectStore("plan"); }; r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
-    let added = 0;
-    await new Promise((res, rej) => {
-      const tx = db.transaction("plan", "readwrite"); const st = tx.objectStore("plan"); const g = st.get("current");
-      g.onsuccess = () => { const cur = (g.result && Array.isArray(g.result.items)) ? g.result.items : []; const fresh = items.filter(i => !cur.some(p => p.placement === i.placement)); added = fresh.length; if (added) st.put({version: 1, items: cur.concat(fresh)}, "current"); };
-      tx.oncomplete = res; tx.onerror = () => rej(tx.error); tx.onabort = () => rej(tx.error);
-    });
-    db.close(); return added;
-  }
+  // "My plan" (我的安排) lives on the server (/api/plan); Event Atlas re-reads it when told, no page reload.
+  const planChanged = () => window.dispatchEvent(new Event("atlas:plan-changed"));
   async function addToAtlas(chosen, msg) {
+    const ids = chosen.map(c => c.id).filter(id => typeof id === "string" && id);
+    if (!ids.length) { msg.textContent = "No sessions to add."; return; }
     try {
-      const cat = await api("/api/catalog");
-      const byId = new Map((cat.sessions || []).map(s => [s.session_id, s]));
-      const items = [];
-      for (const c of chosen) {
-        const s = byId.get(c.id); if (!s) continue;
-        items.push({placement: JSON.stringify([s.source, s.session_id, s.start_local, s.end_local]), key: JSON.stringify([s.source, s.session_id]),
-          code: String(s.code || ""), title: String(s.title || ""), start: String(s.start_local || ""), end: String(s.end_local || ""), location: String(s.location || ""), addedAt: new Date().toISOString()});
-      }
-      if (!items.length) { msg.textContent = "These sessions are not in the official catalog loaded in Event Atlas (demo sessions, or not signed in). Sign in to plan with real sessions."; return; }
-      const db = await new Promise((res, rej) => { const r = indexedDB.open("reinvent.local-plan.v2", 1); r.onupgradeneeded = () => { if (!r.result.objectStoreNames.contains("plan")) r.result.createObjectStore("plan"); }; r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
-      await new Promise((res, rej) => {
-        const tx = db.transaction("plan", "readwrite"); const st = tx.objectStore("plan"); const g = st.get("current");
-        g.onsuccess = () => { const cur = (g.result && Array.isArray(g.result.items)) ? g.result.items : []; const merged = cur.concat(items.filter(i => !cur.some(p => p.placement === i.placement))); st.put({version: 1, items: merged}, "current"); };
-        tx.oncomplete = res; tx.onerror = () => rej(tx.error); tx.onabort = () => rej(tx.error);
-      });
-      db.close();
-      msg.textContent = `Added ${items.length} session(s) to your Event Atlas plan. Reloading the calendar…`;
-      setTimeout(() => location.reload(), 900);
-    } catch (e) { msg.textContent = "Could not add to the Atlas plan: " + e.message; }
+      const r = await api("/api/plan", {action: "add", session_ids: ids});
+      planChanged();
+      msg.textContent = r.changed ? `Added ${r.changed} session(s) to “我的安排”.` : "These sessions are already in “我的安排”.";
+    } catch (e) { msg.textContent = "Could not add to “我的安排”: " + e.message; }
   }
 
   // Suggested sessions with explicit RSVP / favorite buttons: the model proposes, the attendee clicks.
@@ -201,21 +161,8 @@
     banner.textContent = `✓ Signed in to AWS Events (official API) · ${s.reserved.length} reserved · ${s.favorites.length} favorites · read ${new Date(s.fetched_at).toLocaleTimeString()}`;
     banner.className = "nc-ok";
     if (!lastPlan) { const box = bodies.day; box.replaceChildren(el("div", "nc-note", "Your official schedule (AWS Events GetSchedule). Ask Copilot to plan around it."), scheduleList("Reserved", s.reserved), scheduleList("Favorites", s.favorites)); }
-    syncIds = s.reserved.concat(s.favorites).map(r => r.id);
-    if (sessionStorage.getItem("nc-synced") !== s.fetched_at) { sessionStorage.setItem("nc-synced", s.fetched_at); syncOfficial(); }
+    planChanged();  // official reservations and favorites are part of “我的安排”
   }
-  let syncIds = [];
-  async function syncOfficial(msg) {
-    try {
-      const items = await atlasItems(syncIds);
-      const added = await writeAtlas(items);
-      if (msg) msg.textContent = added ? `Added ${added} session(s) to “我的安排”. Reloading…` : "Your official schedule is already in “我的安排”.";
-      if (added) setTimeout(() => location.reload(), 900);
-    } catch (e) { if (msg) msg.textContent = "Sync failed: " + e.message; else console.warn("official schedule sync:", e.message); }
-  }
-  const syncBtn = el("button", "nc-btn2", "Sync my official RSVPs into 我的安排"); syncBtn.type = "button"; const syncMsg = el("div", "nc-note");
-  syncBtn.addEventListener("click", () => syncOfficial(syncMsg));
-  bodies.day.append(syncBtn, syncMsg);
   loadOfficial();
   setInterval(() => { if (banner.className !== "nc-ok") loadOfficial(); }, 5000);
 })();

@@ -9,6 +9,8 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -115,3 +117,15 @@ def save_state(state: dict[str, Any], name: str | None = None) -> None:
     fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
+
+
+_state_lock = threading.Lock()
+
+
+def update_state(change: Callable[[dict[str, Any]], Any], name: str | None = None) -> Any:
+    """Read, change and save the state file as one step for this process; nothing is saved if `change` raises."""
+    with _state_lock:
+        state = load_state(name)
+        result = change(state)
+        save_state(state, name)
+        return result

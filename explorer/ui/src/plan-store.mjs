@@ -1,152 +1,74 @@
-import { loadPlan } from "./model.mjs";
+const PLAN_ERROR = "暫時無法讀取「我的安排」；請稍後再試。";
+const FIELDS = [
+  "placement",
+  "key",
+  "session_id",
+  "code",
+  "title",
+  "start",
+  "end",
+  "location",
+  "source",
+];
+const SOURCES = new Set(["reserved", "favorite", "local"]);
 
-const DATABASE = "reinvent.local-plan.v2";
-const STORE = "plan";
-const CURRENT = "current";
-const STORAGE_ERROR = "無法安全儲存本機安排；原資料仍保留。";
-
-function validatedRecord(record) {
-  let serialized;
-  try {
-    serialized = JSON.stringify(record);
-  } catch {
-    throw Error(STORAGE_ERROR);
-  }
-  if (typeof serialized !== "string") throw Error(STORAGE_ERROR);
-  const parsed = loadPlan({ getItem: () => serialized });
-  if (parsed.error) throw Error(parsed.error);
-  return parsed.items;
+function validItems(data) {
+  if (!data || !Array.isArray(data.items)) throw Error(PLAN_ERROR);
+  for (const item of data.items)
+    if (
+      !item ||
+      FIELDS.some((k) => typeof item[k] !== "string") ||
+      !SOURCES.has(item.source)
+    )
+      throw Error(PLAN_ERROR);
+  return data.items;
 }
 
 /**
- * Each read/migration/update uses one native readwrite transaction over `plan`.
- * IndexedDB serializes that scope across connections/tabs: intents are applied
- * to the transaction's latest `current`, never a caller's stale list. The first
- * committed transaction copies valid v1 legacy data; legacy is never modified.
- * Invalid/unreadable legacy or current data aborts without creating a record.
- * Success is reported only on transaction complete, including no-op updates.
+ * The plan lives on the server (GET/POST /api/plan): official reservations and
+ * favorites plus local picks, each item tagged with `source`. Nothing is kept in
+ * browser storage. `official` holds the server's last report on the official read.
  */
-export function createPlanStore({ indexedDB, legacyStorage } = {}) {
-  let connection;
-
-  function open() {
-    if (connection) return connection;
-    connection = new Promise((resolve, reject) => {
-      if (!indexedDB?.open) return reject(Error(STORAGE_ERROR));
-      let request;
-      try {
-        request = indexedDB.open(DATABASE, 1);
-      } catch {
-        return reject(Error(STORAGE_ERROR));
-      }
-      let failed = false;
-      const fail = () => {
-        failed = true;
-        reject(Error(STORAGE_ERROR));
-      };
-      request.onerror = fail;
-      request.onblocked = fail;
-      request.onupgradeneeded = () => {
-        if (!request.result.objectStoreNames.contains(STORE)) {
-          request.result.createObjectStore(STORE);
-        }
-      };
-      request.onsuccess = () => {
-        const db = request.result;
-        if (failed) return db.close();
-        db.onversionchange = () => {
-          db.close();
-          connection = undefined;
-        };
-        resolve(db);
-      };
-    });
-    connection.catch(() => {
-      connection = undefined;
-    });
-    return connection;
-  }
-
-  async function transact(item, action) {
-    if (action !== undefined && !["add", "remove"].includes(action)) {
-      throw Error("未知的安排操作。");
+export function createPlanStore({
+  fetch: request = (...a) => globalThis.fetch(...a),
+  endpoint = "/api/plan",
+} = {}) {
+  const store = { official: null };
+  async function call(body) {
+    let response, data;
+    try {
+      response = await request(
+        endpoint,
+        body === undefined
+          ? { cache: "no-store" }
+          : {
+              method: "POST",
+              cache: "no-store",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(body),
+            },
+      );
+      data = await response.json();
+    } catch {
+      throw Error(PLAN_ERROR);
     }
-    // Snapshot an add before awaiting a connection; later caller mutations must
-    // not alter its intent. Removal only needs the stable placement identity.
-    const intent =
-      action === "add"
-        ? validatedRecord({ version: 1, items: [item] })[0]
-        : action === "remove"
-          ? { placement: item?.placement }
-          : null;
-    if (action === "remove" && typeof intent.placement !== "string") {
-      throw Error(STORAGE_ERROR);
-    }
-    const db = await open();
-    return new Promise((resolve, reject) => {
-      let transaction;
-      try {
-        transaction = db.transaction(STORE, "readwrite");
-      } catch {
-        return reject(Error(STORAGE_ERROR));
-      }
-      let items, failure;
-      transaction.oncomplete = () => resolve(items);
-      transaction.onabort = () => reject(failure || Error(STORAGE_ERROR));
-      transaction.onerror = () => {
-        failure ||= Error(STORAGE_ERROR);
-      };
-      const abort = (error) => {
-        failure = error;
-        try {
-          transaction.abort();
-        } catch {
-          reject(failure);
-        }
-      };
-      try {
-        const store = transaction.objectStore(STORE);
-        const request = store.get(CURRENT);
-        request.onsuccess = () => {
-          try {
-            const missing = request.result === undefined;
-            if (missing) {
-              const legacy = loadPlan(legacyStorage);
-              if (legacy.error) throw Error(legacy.error);
-              items = validatedRecord({ version: 1, items: legacy.items });
-            } else {
-              items = validatedRecord(request.result);
-            }
-            if (
-              action === "add" &&
-              !items.some((p) => p.placement === intent.placement)
-            ) {
-              items = [...items, intent];
-            } else if (action === "remove") {
-              items = items.filter((p) => p.placement !== intent.placement);
-            }
-            // Reuse the same 500-item / 500,000-character schema validation for
-            // both migration and final writes; exceptions abort the transaction.
-            items = validatedRecord({ version: 1, items });
-            if (missing || action !== undefined) {
-              store.put({ version: 1, items }, CURRENT);
-            }
-          } catch (error) {
-            abort(error);
-          }
-        };
-      } catch (error) {
-        abort(error);
-      }
-    });
+    if (!response.ok)
+      throw Error(typeof data?.error === "string" ? data.error : PLAN_ERROR);
+    const items = validItems(data);
+    store.official = data.official || null;
+    return items;
   }
-
-  return {
-    load: () => transact(),
-    update: (item, action) => {
-      if (action === undefined)
-        return Promise.reject(Error("未知的安排操作。"));
-      return transact(item, action);
-    },
-  };
+  function update(item, action) {
+    if (!["add", "remove"].includes(action))
+      return Promise.reject(Error("未知的安排操作。"));
+    const id = item?.session_id;
+    if (typeof id !== "string" || !id) return Promise.reject(Error(PLAN_ERROR));
+    return call({ action, session_id: id });
+  }
+  return Object.assign(store, {
+    load: () => call(),
+    update,
+    add: (item) => update(item, "add"),
+    remove: (item) => update(item, "remove"),
+  });
 }
