@@ -426,6 +426,36 @@ def get_schedule(event_id: str = EVENT_ID) -> dict:
             "source": "official_api"}
 
 
+def reserve_sessions(session_ids: list, event_id: str = EVENT_ID) -> dict:
+    """Official ReserveSessions (1-10 distinct ids): per-item result, then GetSchedule read-back.
+
+    HTTP 200 can still mean partial or total failure (result.successful / result.failed), so the
+    schedule is read back and each item reports whether it is really in `reserved`.
+    Called only from an explicit user click in the web app, never by the model.
+    """
+    _require_live()
+    ids = list(dict.fromkeys(i for i in session_ids if isinstance(i, str) and i))
+    if not 1 <= len(ids) <= 10:
+        raise ValueError("reserve_sessions takes 1 to 10 distinct session ids")
+    data = _request("POST", "/v1/events/" + quote(event_id, safe="") + "/reservations",
+                    body={"sessionIds": ids})
+    result = data.get("result") if isinstance(data.get("result"), dict) else {}
+    successful = set(result.get("successful") or [])
+    failures = {f.get("sessionId"): f for f in result.get("failed") or [] if isinstance(f, dict)}
+    schedule = get_schedule(event_id)
+    reserved = set(schedule["reserved"])
+    items = []
+    for sid in ids:
+        entry = {"session_id": sid, "ok": sid in successful, "in_schedule_reserved": sid in reserved}
+        if sid not in successful:
+            failure = failures.get(sid, {})
+            entry["code"] = failure.get("code", "not_reported")
+            if failure.get("conflictsWith"):
+                entry["conflicts_with"] = list(failure["conflictsWith"])
+        items.append(entry)
+    return {"results": items, "verified": all(e["in_schedule_reserved"] for e in items if e["ok"])}
+
+
 def add_favorites(session_ids: list, event_id: str = EVENT_ID) -> dict:
     """Official AssociateFavorites (1-10 distinct ids), per-item result, then GetSchedule read-back.
 

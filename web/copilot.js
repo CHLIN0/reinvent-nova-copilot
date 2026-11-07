@@ -40,7 +40,7 @@
 
   panel.append(head, tabs, bodies.chat, bodies.day, bodies.profile, form, opt);
   document.body.append(fab, panel);
-  fab.addEventListener("click", () => { panel.hidden = false; fab.hidden = true; show("chat"); ta.focus(); });
+  fab.addEventListener("click", () => { panel.hidden = false; fab.hidden = true; show("chat"); ta.focus(); if (banner.className === "nc-ok") briefing(); });
   document.querySelector(".copilot-link")?.addEventListener("click", e => { e.preventDefault(); fab.click(); });
   close.addEventListener("click", () => { panel.hidden = true; fab.hidden = false; });
 
@@ -124,12 +124,54 @@
     } catch (e) { msg.textContent = "Could not add to the Atlas plan: " + e.message; }
   }
 
+  // Suggested sessions with explicit RSVP / favorite buttons: the model proposes, the attendee clicks.
+  function sessionCards(rows) {
+    const box = el("div", "nc-cards");
+    for (const s of rows) {
+      const c = el("div", "nc-card");
+      c.append(el("div", "nc-t", `${(s.start || "").slice(5, 10)} ${hhmm(s.start)}–${hhmm(s.end)}  ${s.code || ""}`), el("div", null, s.title || ""), el("div", "nc-sub", s.venue || ""));
+      const row = el("div", "nc-actions"); const out = el("div", "nc-sub");
+      for (const [label, path] of [["RSVP", "/api/rsvp"], ["☆ Favorite", "/api/favorite"]]) {
+        const b = el("button", label === "RSVP" ? "nc-btn" : "nc-btn2", label); b.type = "button";
+        b.addEventListener("click", async () => {
+          if (label === "RSVP" && !confirm(`Reserve a seat for ${s.code || s.title} in your official AWS Events schedule?`)) return;
+          b.disabled = true; out.textContent = "Sending to AWS Events…";
+          try {
+            const r = await api(path, {session_ids: [s.id]}); const it = (r.results || [])[0] || {};
+            const inSched = it.in_schedule_reserved ?? it.in_schedule_favorites;
+            out.textContent = it.ok && inSched ? `✓ Done and verified in your official schedule (${label === "RSVP" ? "reserved" : "favorites"}).`
+              : it.ok ? "Accepted, but not yet visible in your schedule read-back. Check the AWS Events app."
+              : `Not done: ${it.code || "rejected"}${it.conflicts_with ? " (conflicts with " + it.conflicts_with.join(", ") + ")" : ""}.`;
+            if (it.ok) loadOfficial();
+          } catch (e) { out.textContent = "Not done: " + e.message + (/sign_in/.test(e.message) ? " Sign in to AWS Events first." : ""); b.disabled = false; }
+        });
+        row.append(b);
+      }
+      c.append(row, out); box.append(c);
+    }
+    return box;
+  }
+
+  let briefed = false;
+  async function briefing() {
+    if (briefed) return; briefed = true;
+    const a = el("div", "nc-msg nc-bot", "Welcome back. Nova Pro is checking your official schedule and profile…"); log.append(a);
+    try {
+      const r = await api("/api/briefing", {});
+      const head = r.first_visit ? "Welcome! " : r.schedule_diff ? "Since your last visit: " + ["reserved", "favorites"].map(k => `${k} +${r.schedule_diff[k].added.length}/−${r.schedule_diff[k].removed.length}`).join(", ") + "\n\n" : "";
+      a.textContent = head + r.text; if (r.trace.length) a.append(traceBox(r.trace));
+      if ((r.suggested || []).length) a.append(sessionCards(r.suggested));
+      if (r.plan) renderPlan(r.plan);
+    } catch (e) { a.textContent = "Briefing unavailable: " + e.message; }
+  }
+
   async function send(text) {
     show("chat"); const q = el("div", "nc-msg nc-user", text); const a = el("div", "nc-msg nc-bot", "Nova Pro is checking the catalog and routes…");
     log.append(q, a); log.scrollTop = log.scrollHeight; sendBtn.disabled = true;
     try {
       const r = await api("/api/chat", {message: text, allow_write: allow.checked});
       a.textContent = r.text; if (r.trace.length) a.append(traceBox(r.trace));
+      if ((r.suggested || []).length) a.append(sessionCards(r.suggested));
       if (r.plan) { renderPlan(r.plan); const go = el("button", "nc-btn", "See the route & timeline →"); go.type = "button"; go.style.marginTop = "6px"; go.addEventListener("click", () => show("day")); a.append(go); }
     } catch (e) { a.textContent = "Error: " + e.message; a.classList.add("nc-err"); }
     allow.checked = false; sendBtn.disabled = false; log.scrollTop = log.scrollHeight;

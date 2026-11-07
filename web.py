@@ -59,7 +59,7 @@ def _status() -> dict:
     }
 
 
-def _start_sign_in() -> dict:
+def _start_sign_in(origin: str) -> dict:
     si = _state["sign_in"]
     if si["running"]:
         return _status()
@@ -72,7 +72,7 @@ def _start_sign_in() -> dict:
 
     def run() -> None:
         try:
-            official_auth.sign_in(open_browser=False, announce=announce, return_url=f"http://127.0.0.1:{_state.get('port', 8500)}/?signin=complete")
+            official_auth.sign_in(open_browser=False, announce=announce, return_url=origin + "/?signin=complete")
             catalog.clear_cache()
             from atlas import tools
             tools._official_cache["tools"] = None
@@ -117,6 +117,45 @@ def _my_schedule() -> dict:
             "personal_time_count": len(sched["personalTime"])}
 
 
+def _briefing() -> dict:
+    """Welcome-back: compare the official schedule with the last saved snapshot, then ask Nova for a short plan."""
+    state = profile.load_state()
+    sched = _my_schedule() if official_auth.is_signed_in() else {"signed_in": False}
+    diff = None
+    if sched.get("signed_in"):
+        now = {"reserved": [r["id"] for r in sched["reserved"]], "favorites": [r["id"] for r in sched["favorites"]]}
+        before = state.get("schedule") or {}
+        diff = {k: {"added": [i for i in now[k] if i not in (before.get(k) or [])],
+                    "removed": [i for i in (before.get(k) or []) if i not in now[k]]} for k in now} if before else None
+        state["schedule"] = now
+    first_visit = not state.get("visits")
+    state["visits"] = int(state.get("visits") or 0) + 1
+    profile.save_state(state)
+    prompt = ("Brief me as I open the app (this is not a new question). Call get_profile and get_my_schedule. "
+              + ("This is my first visit. " if first_visit else f"Since my last visit my official schedule changed: {json.dumps(diff)}. " if diff else "")
+              + "In under 120 words: 1) check_itinerary on my reserved sessions day by day and name any conflict or tight transition, "
+              "2) recommend what to do next (sessions to add on days with gaps, or what to fix), "
+              "3) if my profile is missing my hotel or walking limit, ask for it in one line.")
+    out = _chat(prompt, allow_write=False)
+    out["schedule_diff"] = diff
+    out["first_visit"] = first_visit
+    return out
+
+
+def _suggested(res) -> list[dict]:
+    """Sessions to offer RSVP/favorite buttons for: the plan's picks, else sessions the answer cites by code."""
+    plan_rows, seen_rows = [], {}
+    for call in res.trace:
+        r = call.result if isinstance(call.result, dict) else {}
+        if call.name == "plan_itinerary" and call.ok:
+            plan_rows = (r.get("plan") or {}).get("chosen") or []
+        for s in (r.get("sessions") or []) + ([r["session"]] if isinstance(r.get("session"), dict) else []):
+            if isinstance(s, dict) and s.get("code"):
+                seen_rows[s["code"]] = s
+    rows = plan_rows or [s for code, s in seen_rows.items() if code in (res.text or "")]
+    return [{k: s.get(k) for k in ("id", "code", "title", "start", "end", "venue")} for s in rows][:10]
+
+
 def _chat(message: str, allow_write: bool) -> dict:
     with _state_lock:  # one conversation at a time; Bedrock calls are serialised
         _state["allow_write"] = allow_write
@@ -134,6 +173,7 @@ def _chat(message: str, allow_write: bool) -> dict:
         "trace": [{"name": c.name, "input": c.input, "ok": c.ok, "confirmed": c.confirmed, "result": _short(c.result)}
                   for c in res.trace],
         "plan": plan,
+        "suggested": _suggested(res),
         "status": _status(),
     }
 
@@ -151,6 +191,13 @@ class Handler(BaseHTTPRequestHandler):
             return False
         origin = self.headers.get("Origin")
         return origin is None or origin in {f"http://{h}" for h in allowed}
+
+    def _origin(self) -> str:
+        """Origin to return to after sign-in: the validated loopback origin that started it (no open redirect)."""
+        port = self.server.server_address[1]
+        origin = self.headers.get("Origin")
+        allowed = {f"http://127.0.0.1:{port}", f"http://localhost:{port}"}
+        return origin if origin in allowed else f"http://{self.headers.get('Host')}" if self._host_ok() else f"http://127.0.0.1:{port}"
 
     def _send(self, code: int, body: bytes, ctype: str, csp: bool = False) -> None:
         self.send_response(code)
@@ -228,14 +275,20 @@ class Handler(BaseHTTPRequestHandler):
                 if not msg:
                     return self._json(400, {"error": "empty message"})
                 return self._json(200, _chat(msg[:4000], bool(body.get("allow_write"))))
+            if self.path in ("/api/rsvp", "/api/favorite"):
+                ids = [i for i in (body.get("session_ids") or []) if isinstance(i, str)]
+                fn = catalog.reserve_sessions if self.path == "/api/rsvp" else catalog.add_favorites
+                return self._json(200, fn(ids))
+            if self.path == "/api/briefing":
+                return self._json(200, _briefing())
             if self.path == "/api/reset":
                 if _state["agent"]:
                     _state["agent"].reset()
                 return self._json(200, {"ok": True})
             if self.path == "/api/signin":
-                return self._json(200, _start_sign_in())
+                return self._json(200, _start_sign_in(self._origin()))
             if self.path == "/api/auth/start":  # Event Atlas sign-in button: same shared login
-                st = _start_sign_in()
+                st = _start_sign_in(self._origin())
                 if not st["sign_in"]["url"]:
                     return self._json(503, {"error": "callback_unavailable"})
                 return self._json(200, {"authorization_url": st["sign_in"]["url"]})
@@ -271,7 +324,7 @@ def start_explorer(port: int) -> None:
             return official_auth.get_access_token()
 
         def start(self, origin=None):
-            st = _start_sign_in()
+            st = _start_sign_in(origin or f"http://127.0.0.1:{_state.get('port', 8500)}")
             if not st["sign_in"]["url"]:
                 raise atlas_server.OAuthError("sign_in_required")
             return {"authorization_url": st["sign_in"]["url"]}

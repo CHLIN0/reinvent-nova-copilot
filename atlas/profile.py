@@ -101,3 +101,17 @@ def update_profile(updates: dict[str, Any], name: str | None = None) -> dict[str
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
     return load_profile(name)
+
+
+def load_state(name: str | None = None) -> dict[str, Any]:
+    """Last-visit snapshot (official schedule ids, last plan) kept next to the profile."""
+    p = PROFILE_DIR / f"{_safe_name(name)}.state.json"
+    return json.loads(p.read_text(encoding="utf-8")) if p.is_file() else {}
+
+
+def save_state(state: dict[str, Any], name: str | None = None) -> None:
+    PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+    p = PROFILE_DIR / f"{_safe_name(name)}.state.json"
+    fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(state, f, ensure_ascii=False, indent=2)
