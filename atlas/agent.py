@@ -74,13 +74,30 @@ class Agent:
     def _converse(self, messages: list[dict]) -> dict:
         if self.client is None:
             self.client = make_client()
-        return self.client.converse(
-            modelId=self.model_id,
-            system=[{"text": self.system_prompt}],
-            messages=messages,
-            toolConfig=bedrock_tool_config(),
-            inferenceConfig=INFERENCE_CONFIG,
-        )
+        config = bedrock_tool_config()
+        try:
+            return self.client.converse(
+                modelId=self.model_id,
+                system=[{"text": self.system_prompt}],
+                messages=messages,
+                toolConfig=config,
+                inferenceConfig=INFERENCE_CONFIG,
+            )
+        except Exception as e:
+            # If the official MCP tool specs are what Bedrock rejected, drop them and retry once with our own tools.
+            from atlas.tools import OFFICIAL_PREFIX, disable_official_tools
+
+            if "Validation" not in type(e).__name__ + str(e) or not any(
+                    t["toolSpec"]["name"].startswith(OFFICIAL_PREFIX) for t in config["tools"]):
+                raise
+            disable_official_tools()
+            return self.client.converse(
+                modelId=self.model_id,
+                system=[{"text": self.system_prompt}],
+                messages=messages,
+                toolConfig=bedrock_tool_config(),
+                inferenceConfig=INFERENCE_CONFIG,
+            )
 
     def _run_tool(self, use: dict) -> tuple[dict, ToolCall]:
         name, args = use["name"], use.get("input") or {}

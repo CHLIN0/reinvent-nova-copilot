@@ -194,3 +194,31 @@ class McpServerTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OfficialMcpBridgeTest(unittest.TestCase):
+    def test_only_read_only_official_tools_are_exposed_and_proxied(self):
+        from unittest import mock
+        from atlas import official_auth, official_mcp
+        listed = [
+            {"name": "list_sessions", "description": "List sessions", "inputSchema": {"type": "object", "properties": {}}},
+            {"name": "get_event", "annotations": {"readOnlyHint": True}, "inputSchema": {"type": "object"}},
+            {"name": "reserve_sessions", "annotations": {"readOnlyHint": False}},
+            {"name": "associate_favorites"},
+        ]
+        tools._official_cache["tools"] = None
+        with mock.patch.object(official_auth, "is_signed_in", return_value=True), \
+             mock.patch.object(official_mcp, "list_tools", return_value=listed), \
+             mock.patch.object(official_mcp, "call_tool", return_value={"structuredContent": {"event": "ok"}}) as call:
+            names = [t["toolSpec"]["name"] for t in tools.bedrock_tool_config()["tools"]]
+            self.assertIn("aws_events__list_sessions", names)
+            self.assertIn("aws_events__get_event", names)
+            self.assertNotIn("aws_events__reserve_sessions", names)
+            self.assertNotIn("aws_events__associate_favorites", names)
+            res, ok = tools.dispatch("aws_events__get_event", {"eventId": "x"})
+            self.assertTrue(ok)
+            self.assertEqual(res["result"], {"event": "ok"})
+            call.assert_called_once_with("get_event", {"eventId": "x"})
+            res, ok = tools.dispatch("aws_events__reserve_sessions", {})
+            self.assertFalse(ok)
+        tools._official_cache["tools"] = None

@@ -118,14 +118,90 @@ TOOL_SPECS: list[dict[str, Any]] = [
 _SPEC_BY_NAME = {s["name"]: s for s in TOOL_SPECS}
 
 
+OFFICIAL_PREFIX = "aws_events__"
+_WRITE_WORDS = ("reserve", "cancel", "favorite", "associate", "create", "update", "delete", "add", "remove", "book", "put")
+_official_cache: dict[str, Any] = {"tools": None}
+
+
+def _is_read_only(tool: dict) -> bool:
+    name = (tool.get("name") or "").lower()
+    if any(w in name for w in _WRITE_WORDS):
+        return False
+    ann = tool.get("annotations") or {}
+    return ann.get("readOnlyHint") is True or name.startswith(("get", "list", "search", "describe"))
+
+
+def official_tools() -> list[dict]:
+    """Read-only tools of the official AWS Events MCP server, when signed in. Cached per process."""
+    if _official_cache["tools"] is not None:
+        return _official_cache["tools"]
+    try:
+        from atlas import official_auth, official_mcp
+
+        if not official_auth.is_signed_in():
+            return []
+        tools = [t for t in official_mcp.list_tools() if isinstance(t, dict) and t.get("name") and _is_read_only(t)]
+    except Exception:  # official MCP unreachable: the agent still works with its own tools
+        return []
+    _official_cache["tools"] = tools
+    return tools
+
+
+_SCHEMA_KEYS = ("type", "properties", "required", "description", "items", "enum")
+
+
+def _clean_schema(s: Any) -> Any:
+    """Keep only basic JSON Schema keywords that Bedrock tool specs accept."""
+    if not isinstance(s, dict):
+        return s
+    out = {k: v for k, v in s.items() if k in _SCHEMA_KEYS}
+    if isinstance(out.get("type"), list):
+        out["type"] = next((x for x in out["type"] if x != "null"), "string")
+    if isinstance(out.get("properties"), dict):
+        out["properties"] = {k: _clean_schema(v) for k, v in out["properties"].items()}
+    if "items" in out:
+        out["items"] = _clean_schema(out["items"])
+    return out
+
+
+def disable_official_tools() -> None:
+    _official_cache["tools"] = []
+
+
+def _official_spec(t: dict) -> dict[str, Any]:
+    schema = _clean_schema(t.get("inputSchema") or {})
+    schema["type"] = "object"
+    schema.setdefault("properties", {})
+    return {"toolSpec": {"name": (OFFICIAL_PREFIX + t["name"])[:64],
+                         "description": "[Official AWS Events MCP, read-only] " + (t.get("description") or t["name"])[:900],
+                         "inputSchema": {"json": schema}}}
+
+
 def bedrock_tool_config() -> dict[str, Any]:
-    """toolConfig for the Bedrock Converse API."""
-    return {
-        "tools": [
-            {"toolSpec": {"name": s["name"], "description": s["description"], "inputSchema": {"json": s["input_schema"]}}}
-            for s in TOOL_SPECS
-        ]
-    }
+    """toolConfig for the Bedrock Converse API: our tools plus the official MCP's read-only tools when signed in."""
+    ours = [{"toolSpec": {"name": s["name"], "description": s["description"], "inputSchema": {"json": s["input_schema"]}}}
+            for s in TOOL_SPECS]
+    return {"tools": ours + [_official_spec(t) for t in official_tools()]}
+
+
+def _dispatch_official(name: str, args: dict) -> tuple[dict, bool]:
+    from atlas import official_mcp
+
+    wanted = name[len(OFFICIAL_PREFIX):]
+    tool = next((t for t in official_tools() if t["name"][:64 - len(OFFICIAL_PREFIX)] == wanted), None)
+    if tool is None:
+        return {"error": f"Official MCP tool {wanted!r} is not available or not read-only."}, False
+    try:
+        res = official_mcp.call_tool(tool["name"], args)
+    except Exception as e:
+        return {"error": f"{type(e).__name__}: {e}"}, False
+    body = res.get("structuredContent")
+    if body is None:
+        body = "\n".join(c.get("text", "") for c in res.get("content") or [] if isinstance(c, dict))
+    text = json.dumps(body, ensure_ascii=False, default=str)
+    if len(text) > 12000:
+        body = text[:12000] + "... (truncated)"
+    return {"source": "official AWS Events MCP", "tool": tool["name"], "result": body}, not res.get("isError")
 
 
 @dataclass
@@ -369,6 +445,8 @@ def _home_base_travel(be: Backend, plan: dict, prefer: str) -> dict | None:
 
 def dispatch(name: str, args: dict | None, backend: Backend | None = None) -> tuple[dict, bool]:
     """Run one tool. Returns (json-serialisable result, ok). Never raises."""
+    if name.startswith(OFFICIAL_PREFIX):
+        return _dispatch_official(name, args or {})
     if name not in _SPEC_BY_NAME:
         return {"error": f"Unknown tool {name!r}."}, False
     args = args or {}
