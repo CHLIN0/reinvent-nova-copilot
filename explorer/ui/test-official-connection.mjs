@@ -170,3 +170,100 @@ test("callback binding can be retried and completed OAuth does not imply catalog
   assert.ok(!sourceTimingNote("aws_events_api").includes("正規化快取"));
   assert.match(sourceTimingNote("rainfocus"), /正規化快取/);
 });
+
+// Codex T3 finding 3: Event Atlas's button is the one sign-in control, so it must follow the server.
+function signedInController(serverStatus = status({ connected: true })) {
+  const calls = [];
+  let copy = null;
+  const controller = createOfficialConnection({
+    request: async (url, init = {}) => {
+      calls.push({ url, method: init.method || "GET" });
+      return url === "/api/auth/start"
+        ? response({ authorization_url: "https://example.invalid/authorize" })
+        : response(serverStatus);
+    },
+    onChange: (state) => {
+      copy = connectionCopy(state);
+    },
+    schedule: () => 0,
+    cancel: () => {},
+  });
+  return { controller, calls, copy: () => copy };
+}
+
+test("signed out or expired per the status poll re-enables the sign-in button", async () => {
+  const { controller, copy, calls } = signedInController();
+  await controller.refresh();
+  assert.deepEqual([copy().button, copy().disabled], ["已登入", true]);
+  assert.equal(await controller.start(), null);
+  controller.applyStatus({ signed_in: false, soon: false });
+  assert.deepEqual([copy().button, copy().disabled], ["登入 AWS Events", false]);
+  assert.equal(await controller.start(), "https://example.invalid/authorize");
+  assert.equal(calls.filter((c) => c.url === "/api/auth/start").length, 1);
+  controller.stop();
+});
+
+test("about to expire offers 再次登入 on the same button and allows a new sign-in", async () => {
+  const { controller, copy } = signedInController();
+  await controller.refresh();
+  controller.applyStatus({ signed_in: true, soon: true });
+  assert.deepEqual([copy().button, copy().disabled], ["再次登入", false]);
+  await controller.refresh(); // a re-check keeps the warning while still connected
+  assert.equal(copy().button, "再次登入");
+  assert.equal(await controller.start(), "https://example.invalid/authorize");
+  controller.applyStatus({ signed_in: true, soon: false });
+  assert.deepEqual([copy().button, copy().disabled], ["已登入", true]);
+  controller.stop();
+});
+
+test("an expired token the server still holds is not shown as signed in", async () => {
+  const past = Date.now() / 1000 - 60;
+  const expired = signedInController(
+    status({ connected: true, expires_at: past, refreshable: false }),
+  );
+  await expired.controller.refresh();
+  assert.equal(expired.controller.snapshot().connected, false);
+  assert.equal(expired.copy().disabled, false);
+  const refreshable = signedInController(
+    status({ connected: true, expires_at: past, refreshable: true }),
+  );
+  await refreshable.controller.refresh();
+  assert.equal(refreshable.controller.snapshot().connected, true);
+});
+
+test("signed in per the poll while Atlas still shows signed out re-checks the server", async () => {
+  const { controller, calls } = signedInController(status({ connected: false }));
+  await controller.refresh();
+  const before = calls.length;
+  controller.applyStatus({ signed_in: true, soon: false });
+  await new Promise((r) => setImmediate(r));
+  assert.equal(calls.length, before + 1);
+  assert.equal(calls.at(-1).url, "/api/auth/status");
+  controller.stop();
+});
+
+test("a failed auth check recovers when the status poll answers signed out (Codex T3 round 2)", async () => {
+  let fail = true;
+  let copy = null;
+  const controller = createOfficialConnection({
+    request: async (url) => {
+      if (url === "/api/auth/start")
+        return response({ authorization_url: "https://example.invalid/authorize" });
+      if (fail) throw Error("network");
+      return response(status());
+    },
+    onChange: (state) => {
+      copy = connectionCopy(state);
+    },
+    schedule: () => 0,
+    cancel: () => {},
+  });
+  await controller.refresh();
+  assert.equal(controller.snapshot().error, "connection_unavailable");
+  assert.equal(copy.disabled, true);
+  fail = false;
+  controller.applyStatus({ signed_in: false, soon: false });
+  assert.deepEqual([copy.button, copy.disabled], ["登入 AWS Events", false]);
+  assert.equal(await controller.start(), "https://example.invalid/authorize");
+  controller.stop();
+});

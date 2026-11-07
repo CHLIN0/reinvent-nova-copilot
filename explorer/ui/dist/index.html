@@ -20,7 +20,17 @@
         <h1>找到議程，看見時間與位置。</h1>
         <p>re:Invent · 議程探索與會場方位</p>
       </div>
-      <a class="copilot-link" href="http://127.0.0.1:8500/" style="font-weight:600;white-space:nowrap">Nova Copilot: plan with AI →</a>
+      <button
+        id="copilot-toggle"
+        class="copilot-link"
+        type="button"
+        aria-pressed="false"
+        aria-controls="nc-panel"
+        style="font-weight: 600; white-space: nowrap"
+        hidden
+      >
+        ✦ Nova Copilot
+      </button>
       <div class="source-pill">
         <span class="live-dot"></span
         ><span id="freshness" role="status">確認官方連線…</span
@@ -46,7 +56,36 @@
           登入 AWS Events
         </button>
       </section>
-      <section class="controlbar" aria-label="日曆與篩選">
+      <div
+        id="home-tabs"
+        class="home-tabs segmented"
+        role="tablist"
+        aria-label="我的行程與探索議程"
+        hidden
+      >
+        <button
+          id="tab-mine"
+          role="tab"
+          aria-selected="true"
+          aria-pressed="true"
+          aria-controls="mine"
+        >
+          My re:Invent</button
+        ><button
+          id="tab-explore"
+          role="tab"
+          aria-selected="false"
+          aria-pressed="false"
+          aria-controls="explore-controls"
+        >
+          Explore
+        </button>
+      </div>
+      <section
+        id="explore-controls"
+        class="controlbar"
+        aria-label="日曆與篩選"
+      >
         <div class="view-row">
           <div class="segmented" role="group" aria-label="日曆視角">
             <button id="week-view" aria-pressed="true">五天</button
@@ -75,6 +114,13 @@
               autocomplete="off" /></label
           ><button id="clear" class="quiet" type="button">清除條件</button>
         </form>
+        <div
+          id="filter-chips"
+          class="filter-chips"
+          aria-label="已選篩選條件"
+        ></div>
+        <details id="filter-more" class="filter-more">
+          <summary id="filter-summary">更多篩選條件</summary>
         <div class="discovery-row">
           <div
             id="facet-controls"
@@ -91,16 +137,12 @@
         <p id="time-status" class="time-status" role="status" hidden>
           時段結束須晚於開始；這個條件只篩選同一天內的時段。請調整時間或清除條件。
         </p>
-        <div
-          id="filter-chips"
-          class="filter-chips"
-          aria-label="已選篩選條件"
-        ></div>
         <div class="filter-help">
           同組可複選（任一符合），不同組同時套用。條件保存在網址中。
         </div>
+        </details>
       </section>
-      <div class="context-row">
+      <div id="context-row" class="context-row">
         <p>
           <strong id="visible-count">—</strong
           ><span id="context-description"> 場議程</span
@@ -113,7 +155,28 @@
       </div>
       <div id="notice" class="notice" role="status" hidden></div>
       <div id="workspace" class="workspace" data-view="week" data-panel="none">
-        <section class="calendar-pane" aria-label="議程日曆">
+        <section
+          id="mine"
+          class="mine-pane"
+          role="tabpanel"
+          aria-labelledby="tab-mine"
+          hidden
+        >
+          <div id="mine-briefing" class="mine-briefing" hidden></div>
+          <div class="mine-head">
+            <div
+              id="mine-dates"
+              class="date-tabs"
+              role="group"
+              aria-label="選擇日期"
+            ></div>
+            <p id="mine-summary" class="mine-summary" role="status">
+              正在讀取你的行程…
+            </p>
+          </div>
+          <ol id="mine-agenda" class="mine-agenda" aria-label="當天行程"></ol>
+        </section>
+        <section id="calendar-pane" class="calendar-pane" aria-label="議程日曆">
           <div class="calendar-modebar">
             <div class="segmented" role="group" aria-label="議程排列方式">
               <button id="layout-stack" aria-pressed="true">合併卡疊</button>

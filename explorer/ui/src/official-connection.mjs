@@ -1,11 +1,21 @@
 // Only safe connection metadata leaves this controller. Authorization URLs are
 // returned to the explicit click handler, never persisted or included in status.
+// Copilot's status poll (web/copilot.js, every 60 s) announces the server's sign-in state with this
+// window event, detail {signed_in, soon}; Atlas's sign-in button is the only sign-in control.
+export const AUTH_STATUS_EVENT = "atlas:auth-status";
+
 export function connectionCopy(state) {
   if (state.checking && !state.checked)
     return {
       title: "正在確認官方連線…",
       button: "登入 AWS Events",
       disabled: true,
+    };
+  if (state.connected && state.expiring)
+    return {
+      title: "AWS Events 登入即將到期；請再次登入，以免中斷官方議程與行程讀取。",
+      button: "再次登入",
+      disabled: false,
     };
   if (state.connected)
     return {
@@ -98,6 +108,7 @@ export function createOfficialConnection({
     pending_sign_in: false,
     error: null,
     callback_available: null,
+    expiring: false,
   };
   let active = null,
     timer = null,
@@ -131,11 +142,19 @@ export function createOfficialConnection({
           typeof data.connected !== "boolean"
         )
           throw Error();
-        becameConnected = data.connected && !state.connected;
+        // Same rule as web.py's /api/status: an expired token that cannot refresh is not signed in,
+        // although the server still holds it (auth_status "refresh_required").
+        const connected =
+          data.connected &&
+          (typeof data.expires_at !== "number" ||
+            data.expires_at * 1000 > Date.now() ||
+            data.refreshable === true);
+        becameConnected = connected && !state.connected;
         state = {
           checking: false,
           checked: true,
-          connected: data.connected,
+          expiring: state.expiring && connected,
+          connected,
           pending_sign_in: data.pending_sign_in === true,
           callback_available: data.callback_available === true,
           error: data.error ? safeConnectionError(data.error) : null,
@@ -161,7 +180,7 @@ export function createOfficialConnection({
     return active;
   }
   async function start() {
-    if (starting || stopped || state.connected) return null;
+    if (starting || stopped || (state.connected && !state.expiring)) return null;
     starting = true;
     emit();
     try {
@@ -203,6 +222,42 @@ export function createOfficialConnection({
       };
       emit();
       schedulePoll();
+    },
+    /**
+     * The server's own view of the sign-in (from Copilot's status poll): signed out or expired
+     * re-enables "登入 AWS Events" (also after a failed auth check); about to expire offers "再次登入";
+     * signed in elsewhere re-checks.
+     */
+    applyStatus({ signed_in, soon } = {}) {
+      if (stopped || typeof signed_in !== "boolean") return;
+      if (!signed_in) {
+        if (state.connected || state.expiring) {
+          state = {
+            ...state,
+            connected: false,
+            expiring: false,
+            pending_sign_in: false,
+            error: "sign_in_required",
+          };
+          emit();
+          schedulePoll();
+        } else if (state.error === "connection_unavailable") {
+          // The poll got an answer from this service, so an earlier failed auth check no longer
+          // applies: clear it and give the sign-in button back.
+          state = { ...state, checking: false, checked: true, error: "sign_in_required" };
+          emit();
+          schedulePoll();
+        }
+        return;
+      }
+      if (!state.connected) {
+        void refresh();
+        return;
+      }
+      if (state.expiring !== !!soon) {
+        state.expiring = !!soon;
+        emit();
+      }
     },
     stop() {
       stopped = true;
