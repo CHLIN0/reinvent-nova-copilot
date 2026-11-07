@@ -33,8 +33,10 @@ def print_trace(res: AgentResult) -> None:
 
 
 def run_one(agent: Agent, q: str, trace: bool) -> None:
+    from atlas.format import format_answer
+
     res = agent.ask(q)
-    print(res.text)
+    print(format_answer(res.text, res.trace))
     if trace:
         print_trace(res)
 

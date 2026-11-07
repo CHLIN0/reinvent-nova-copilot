@@ -201,12 +201,14 @@ def _chat(message: str, allow_write: bool, feature: str = "chat") -> dict:
         finally:
             agent.feature = previous_feature
             _state["allow_write"] = False
+    from atlas import format as answer_format
+
     plan = None
     for call in res.trace:
         if call.name == "plan_itinerary" and call.ok:
             plan = call.result
     return {
-        "text": res.text,
+        "text": answer_format.format_answer(res.text, res.trace),
         "rounds": res.rounds,
         "trace": [{"name": c.name, "input": c.input, "ok": c.ok, "confirmed": c.confirmed, "result": _short(c.result)}
                   for c in res.trace],
