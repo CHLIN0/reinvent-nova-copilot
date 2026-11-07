@@ -1,12 +1,16 @@
-# From re:Invent chatbot to re:Invent agent: giving Amazon Nova Pro the official Event Catalog API
+# From re:Invent chatbot to re:Invent agent: carrying AWS AI League prompt lessons into the official Event Catalog API
+
+## Where this started: lessons from AWS AI League
+
+A few weeks ago I competed in an AWS AI League prompt-engineering final. The challenge was to make Amazon Nova Pro the best possible re:Invent advisor with nothing but a prompt. Round after round, the same lessons held up, all in line with the Amazon Nova prompting guidance: give the model a clear veteran role, write the rules as short numbered MUST / DO NOT instructions, put the direct answer first, make it address every condition the attendee states, and forbid it from inventing dates, times, rooms or session codes.
+
+This project carries those lessons over from a prompt-only contest to a real product, and asks which of them still apply once the model can use tools.
 
 ## The problem: good advice, wrong plans
 
-A few weeks ago I competed in an AWS AI League prompt-engineering final. The task was to make Amazon Nova Pro the best possible re:Invent advisor, with nothing but a prompt. Following the Amazon Nova prompting guidance, my prompt gave Nova Pro a clear veteran role and a few strict rules: give the direct answer first, address every condition the attendee states, and never invent dates, times, rooms or session codes.
+The no-invention rule is the catch. A prompt-only chatbot gives good advice *because* it refuses to be specific. Ask it "Can I go from a 10:00 session at The Venetian to an 11:00 session at MGM Grand?" and the best it can honestly say is "check the app".
 
-That last rule is the catch. A prompt-only chatbot gives good advice *because* it refuses to be specific. Ask it "Can I go from a 10:00 session at The Venetian to an 11:00 session at MGM Grand?" and the best it can honestly say is "check the app".
-
-The new re:Invent Event Catalog API and MCP server remove that limit. So I asked: what if the same tuned Nova Pro could *look things up and check them* before answering?
+The new re:Invent Event Catalog API and MCP server remove that limit. So I asked: what if the same Nova Pro, with the same hard-won prompt habits, could *look things up and check them* before answering?
 
 ## What I built
 
@@ -49,7 +53,7 @@ Next, confirm this plan in the AWS Events app and adjust as needed.
 
 ## From "never invent" to "look it up"
 
-The prompt-only version had to avoid specifics because it could not check them. With tools, the default flips. I kept the Nova prompt structure (role, numbered MUST / DO NOT rules, explicit output format) and the veteran attitude (direct answer first, every condition handled, one tip that fits this person), and rewrote the specificity rule:
+The prompt-only version had to avoid specifics because it could not check them. With tools, the default flips. Some AI League lessons transfer unchanged, and one gets inverted. I kept the Nova prompt structure (role, numbered MUST / DO NOT rules, explicit output format) and the veteran attitude (direct answer first, every condition handled, one tip that fits this person), and rewrote the specificity rule:
 
 | Prompt-only advisor | Copilot with the Events API |
 |---|---|
