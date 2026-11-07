@@ -258,9 +258,11 @@ class Battery(Base):
         self.assertEqual(system, SYSTEM_PROMPT)
         for rule in ("under 160 words", "FIRST sentence starts with the answer", "No additional session fits",
                      "NEVER say sessions were added unless", "3 shown", "one line per session",
-                     "Put each transition on its own line", "language field", "unofficial translation",
-                     "Do not pass max_sessions"):
+                     "Put each transition on its own line", "language field", "unofficial translation"):
             self.assertIn(rule, system)
+        # A prompt rule about omitting max_sessions made Nova Pro emit an invalid tool-use sequence in
+        # every signed-in briefing; the tool spec carries that guidance instead.
+        self.assertNotIn("max_sessions", system)
 
 
 if __name__ == "__main__":
