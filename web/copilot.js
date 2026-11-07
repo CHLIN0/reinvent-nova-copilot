@@ -9,6 +9,7 @@
   const FIELDS = [["hotel", "Hotel / 飯店"], ["max_steps_per_day", "Max steps per day / 每日步數上限"], ["transport", "Transport (walk, shuttle, monorail, rideshare)"], ["interests", "Interests (comma separated)"], ["role", "Role"], ["diet", "Diet"], ["mobility", "Mobility"], ["fixed_commitments", "Fixed commitments (comma separated)"], ["special_arrangements", "Special arrangements (comma separated)"]];
   const LISTS = new Set(["transport", "interests", "fixed_commitments", "special_arrangements"]);
   let lastPlan = null;
+  let signedIn = false;
 
   const fab = el("button", null, "✦ Nova Copilot"); fab.id = "nc-fab"; fab.type = "button";
   const panel = el("aside"); panel.id = "nc-panel"; panel.hidden = true;
@@ -40,7 +41,7 @@
 
   panel.append(head, tabs, bodies.chat, bodies.day, bodies.profile, form, opt);
   document.body.append(fab, panel);
-  fab.addEventListener("click", () => { panel.hidden = false; fab.hidden = true; show("chat"); ta.focus(); if (banner.className === "nc-ok") briefing(); });
+  fab.addEventListener("click", () => { panel.hidden = false; fab.hidden = true; show("chat"); ta.focus(); if (signedIn) briefing(); });
   document.querySelector(".copilot-link")?.addEventListener("click", e => { e.preventDefault(); fab.click(); });
   close.addEventListener("click", () => { panel.hidden = true; fab.hidden = false; });
 
@@ -163,6 +164,7 @@
         status = await api("/api/status"); // Reading the schedule may have refreshed the token.
       }
     } catch (e) { banner.textContent = "AWS Events: could not check sign-in status (" + e.message + ")"; banner.className = "nc-warn"; return; }
+    signedIn = status.signed_in;
     const soon = status.signed_in && status.seconds_left != null && status.seconds_left <= 300;
     banner.textContent = status.signed_in
       ? `✓ AWS Events: signed in${status.seconds_left == null ? "" : ` · ${Math.ceil(status.seconds_left / 60)} min left`}${soon ? " · sign in again soon" : ""}${status.refreshable ? " · automatic refresh available" : ""}`
