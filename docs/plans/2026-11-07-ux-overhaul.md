@@ -1,6 +1,6 @@
 # Roadmap: re:Invent Nova Copilot (post-submission)
 
-Status: **v2.2, approved by BR on 2026-11-07 with adjustments (section M2). M0 T0/T1/T2 merged to main 2026-11-07 (PRs #1–#3, Codex MERGE on each, verified on BR's account); research memos in `docs/research/`; wave 2: T5 (PR #5) and T10 (PR #4) merged 2026-11-07 after Codex MERGE and host verification on BR's account; wave 3: T3 (PR #6) and T4 (PR #7) merged 2026-11-07 after Codex MERGE and host verification on BR's account; next: T6, T7, T8, then the T9 gate.** Defaults BR did not object to: T3 opens on the first conference day until 2026-11-30, then today; T8 keeps the CLI and deletes `/copilot`; T7's real cancel waits for BR's go on the day; M2a spend cap USD 20. v1 (the UX overhaul) is now Milestone 0 of this roadmap.
+Status: **v2.2, approved by BR on 2026-11-07 with adjustments (section M2). M0 T0/T1/T2 merged to main 2026-11-07 (PRs #1–#3, Codex MERGE on each, verified on BR's account); research memos in `docs/research/`; wave 2: T5 (PR #5) and T10 (PR #4) merged 2026-11-07 after Codex MERGE and host verification on BR's account; wave 3: T3 (PR #6) and T4 (PR #7) merged 2026-11-07 after Codex MERGE and host verification on BR's account; wave 4: T8 (PR #8), T6 (PR #9) and T7 (PR #10) merged 2026-11-09 after Codex round 1, a blind Claude round 2 (MERGE) and host verification on BR's account; T7's real cancel + re-reserve still waits for BR's go; next: the T9 gate.** Defaults BR did not object to: T3 opens on the first conference day until 2026-11-30, then today; T8 keeps the CLI and deletes `/copilot`; T7's real cancel waits for BR's go on the day; M2a spend cap USD 20. v1 (the UX overhaul) is now Milestone 0 of this roadmap.
 
 ## 1. What BR wants (his words, condensed; the roadmap must not drift from these)
 
@@ -101,13 +101,16 @@ M0 first (T0+T1+T2 → T3+T4+T5+T10 → T6+T7+T8 → T9). The three spikes (M2a,
 ### T6 · New and changed sessions since last visit (E1; depends on T1)
 - Server-side catalog snapshot per profile (id → start, end, room, abstract hash). Each visit: new ids, moved or cancelled reserved sessions. Briefing reports them; new sessions matching interests are recommended with codes.
 - Acceptance: fixture test with a modified catalog; briefing names the new session and the moved reservation.
+- Status 2026-11-09: merged (PR #9). Snapshot in `local-private/profiles/<name>.catalog.json` (0600), written only when every row is official. Codex round 1 found provenance read from a process-global flag, lost cancellation history after a fallback, unreserved sessions reported as moved; fixed with tests. Verified live: an edited snapshot copy produced "3 new sessions, 1 reservation moved" and the briefing named CMP321-R and AIM370/AIM341/ANT303. Known limits: a non-numeric `experience_level` yields no recommendations; a session the attendee unreserved that then leaves the catalog reads as "no longer in the catalog".
 
 ### T7 · RSVP lifecycle
 - Cancel reservation with confirm → official call → read-back; seat status on cards; result codes in plain words.
 - Acceptance: offline test; one supervised real cancel + re-reserve on a low-stakes session, with BR's go-ahead.
+- Status 2026-11-09: merged (PR #10). Cancel = documented CancelReservation (DELETE per session, 404 treated as already gone, 409 operationClosed), click-only with read-back; seat words and plain-words result codes in Atlas and the panel; reserved cards never show RSVP. Verified live without a write (CMP321-R reserved: cancel action, 已滿/Full, no RSVP). Open: the supervised real cancel + re-reserve, on BR's go. Seen during verification for T9: Nova answered a session question from conversation context without calling get_session, so no session cards appeared.
 
 ### T8 · Remove duplicates (fixes P8)
 - Delete `/copilot` chat-only page; keep CLI for judges and tests; one sign-in path; one place where the plan is shown.
+- Status 2026-11-09: merged (PR #8). `web/index.html`, `/copilot`, POST `/api/signin` and POST `/api/profile` removed; the panel keeps only Ask (profile edits go through `update_profile`); GET `/api/profile` kept for Atlas translation. Verified live: `/copilot` 404, one sign-in control.
 
 ### T9 · Reliability gate
 - Offline scenario battery in CI; user-facing text for 401/403/429 and Bedrock unavailable; `unittest` green.
