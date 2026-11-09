@@ -187,9 +187,19 @@ def _suggested(res) -> list[dict]:
             if isinstance(s, dict) and s.get("code"):
                 seen_rows[s["code"]] = s
     rows = plan_rows or [s for code, s in seen_rows.items() if code in (res.text or "")]
-    # Plan rows carry no seat band; the same session's search result in this trace does.
-    return [{**{k: s.get(k) for k in ("id", "code", "title", "start", "end", "venue")},
-             "seats": s.get("seats") or seen_rows.get(s.get("code"), {}).get("seats") or ""} for s in rows[:10]]
+    be = getattr(_state["agent"], "backend", None)  # the catalog the tools just used
+
+    def seats(s):  # plan rows carry no seat band: take it from a search row in this trace, else the catalog
+        found = s.get("seats") or seen_rows.get(s.get("code"), {}).get("seats")
+        if not found and s.get("id"):
+            try:
+                found = ((be.get_session if be else catalog.get_session)(s["id"]) or {}).get("seats")
+            except Exception:  # seat words are optional; never fail the answer for them
+                found = ""
+        return found or ""
+
+    return [{**{k: s.get(k) for k in ("id", "code", "title", "start", "end", "venue")}, "seats": seats(s)}
+            for s in rows[:10]]
 
 
 def _chat(message: str, allow_write: bool, feature: str = "chat") -> dict:

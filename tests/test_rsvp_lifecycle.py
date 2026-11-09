@@ -128,6 +128,22 @@ class RouteTest(unittest.TestCase):
         self.assertEqual(web._suggested(res)[0]["seats"], first["seats"])
         self.assertTrue(first["seats"])
 
+    def test_planner_suggestions_carry_seat_band_without_a_search(self):
+        """Codex round 1: plan_itinerary(query=...) searches internally, so no search row is in the trace."""
+        first = catalog.load_fixture()[0]
+        chosen = {k: first[k] for k in ("id", "code", "title", "start", "end", "venue")}
+        res = mock.Mock(text="", trace=[ToolCall("plan_itinerary", {"query": "agents"}, True, {"plan": {"chosen": [chosen]}})])
+        be = mock.Mock(get_session=mock.Mock(return_value=first))
+        with mock.patch.dict(web._state, {"agent": mock.Mock(backend=be)}):
+            self.assertEqual(web._suggested(res)[0]["seats"], first["seats"])  # the backend the tools used
+        be.get_session.assert_called_once_with(first["id"])
+        with mock.patch.dict(web._state, {"agent": None}), \
+                mock.patch.object(catalog, "get_session", return_value=first):
+            self.assertEqual(web._suggested(res)[0]["seats"], first["seats"])  # default backend = the catalog
+        with mock.patch.dict(web._state, {"agent": None}), \
+                mock.patch.object(catalog, "get_session", side_effect=catalog.CatalogError("catalog_unavailable")):
+            self.assertEqual(web._suggested(res)[0]["seats"], "")  # optional: never fails the answer
+
     def test_atlas_catalog_keeps_seat_availability(self):
         sys.path.insert(0, str(ROOT / "explorer"))
         import server as atlas_server  # explorer/server.py

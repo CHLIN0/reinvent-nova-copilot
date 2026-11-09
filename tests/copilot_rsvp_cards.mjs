@@ -29,10 +29,12 @@ const S = (id, code, seats) => ({ id, code, title: "Title " + code, start: "2026
 const suggested = [S("r1", "SYN-RES1", "limited"), S("f1", "SYN-FAV1", "walkUp"), S("n1", "SYN-NEW1", ""), S("n2", "SYN-NEW2", "available")];
 const planItem = (id, code, source) => ({ session_id: id, code, source });
 let reserved = ["r1", "x9"];
+let planMode = "ok";  // "fail": /api/plan answers 500; "error": the official read failed, only local picks listed
+let refuseCancel = false;
 const calls = [];
 const asked = [];
 const results = {
-  "/api/rsvp/cancel": () => { reserved = reserved.filter((i) => i !== "r1"); return { results: [{ session_id: "r1", ok: true, in_schedule_reserved: false }], verified: true }; },
+  "/api/rsvp/cancel": () => refuseCancel ? { results: [{ session_id: "r1", ok: false, code: "operationClosed", in_schedule_reserved: true }], verified: true } : (reserved = reserved.filter((i) => i !== "r1"), { results: [{ session_id: "r1", ok: true, in_schedule_reserved: false }], verified: true }),
   "/api/rsvp": () => ({ results: [{ session_id: "n1", ok: false, code: "scheduleConflict", conflicts_with: ["x9", "zz"], in_schedule_reserved: false }], verified: true }),
   "/api/favorite": () => ({ results: [{ session_id: "n2", ok: false, code: "brandNewCode", in_schedule_favorites: false }], verified: true }),
 };
@@ -50,6 +52,8 @@ globalThis.confirm = (text) => { asked.push(text); return true; };
 globalThis.fetch = async (url, init = {}) => {
   const method = init.method || "GET";
   calls.push({ url, method, body: init.body ? JSON.parse(init.body) : null });
+  if (url === "/api/plan" && planMode === "fail") return { ok: false, status: 500, json: async () => ({ error: "boom" }) };
+  if (url === "/api/plan" && planMode === "error") return { ok: true, status: 200, json: async () => ({ version: 1, official: { status: "error" }, items: [planItem("n2", "SYN-NEW2", "local")] }) };
   const reply = method === "POST" && results[url] ? results[url]()
     : {
       "/api/status": { signed_in: false },
@@ -112,4 +116,21 @@ buttons(card("SYN-NEW2"))[1].click();
 await settle();
 assert.ok(texts(card("SYN-NEW2")).includes("Not done: AWS Events refused it (code: brandNewCode); see AWS Events."));
 assert.equal(asked.length, 2);  // favorites are cheap and reversible: no extra confirm
+
+// Codex round 1: a failed plan read (HTTP error, or the official read failing) keeps the known reservation.
+for (planMode of ["fail", "error"]) {
+  window.dispatchEvent(new Event("atlas:plan-changed"));
+  await settle();
+  assert.deepEqual(labels(card("SYN-RES1")), ["Cancel reservation"], planMode);
+  assert.ok(texts(card("SYN-RES1")).includes("✓ Reserved in your official schedule"), planMode);
+}
+planMode = "ok";
+
+// Codex round 1: a refused cancel says why in words and leaves Cancel clickable for a retry.
+refuseCancel = true;
+buttons(card("SYN-RES1"))[0].click();
+await settle();
+assert.ok(texts(card("SYN-RES1")).includes("Not done: AWS Events is not accepting this change right now; try again later."));
+assert.deepEqual(labels(card("SYN-RES1")), ["Cancel reservation"]);
+assert.equal(buttons(card("SYN-RES1"))[0].disabled, false);
 console.log("copilot rsvp checks passed");

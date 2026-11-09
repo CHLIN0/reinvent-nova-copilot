@@ -137,11 +137,11 @@
     const when = s => `${(s.start || "").slice(5, 10)} ${hhmm(s.start)}–${hhmm(s.end)}`;
     const named = s => `${s.code || s.id} “${s.title || ""}” (${when(s)})`;
     async function readPlan() {
-      official = {}; codes = {};
-      try {
-        const p = await readPlanOnce(); const live = p.official?.status === "live";
-        for (const i of p.items || []) { codes[i.session_id] = i.code || i.session_id; if (live && i.source !== "local") official[i.session_id] = i.source; }
-      } catch { /* unknown state: offer the plain buttons; the official API still refuses duplicates */ }
+      try {  // a failed read, or an official read that failed, keeps the last known state (Cancel never turns into RSVP)
+        const p = await readPlanOnce(); const status = p.official?.status;
+        codes = Object.fromEntries((p.items || []).map(i => [i.session_id, i.code || i.session_id]));
+        if (status !== "error") official = Object.fromEntries((p.items || []).filter(i => status === "live" && i.source !== "local").map(i => [i.session_id, i.source]));
+      } catch { /* keep the last known state */ }
       for (const render of cards) render();
     }
     for (const s of rows) {
@@ -161,7 +161,7 @@
               : `✓ Done and verified in your official schedule (${path === "/api/rsvp" ? "reserved" : "favorites"}).`)
             : it.ok ? (cancel ? "Cancel accepted, but your schedule read-back still lists it as reserved. Check the AWS Events app." : "Accepted, but not yet visible in your schedule read-back. Check the AWS Events app.")
             : "Not done: " + failureText(it, id => codes[id] || id);
-          if (it.ok) { loadOfficial(); await readPlan(); }
+          if (it.ok) { loadOfficial(); await readPlan(); } else b.disabled = false;  // refused: nothing changed, retry stays possible
         } catch (e) { out.textContent = "Not done: " + e.message + (/sign_in/.test(e.message) ? " Sign in to AWS Events first." : ""); b.disabled = false; }
       };
       cards.push(() => {
