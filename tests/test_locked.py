@@ -47,6 +47,12 @@ def fixture_backend(schedule, calls=None):
     )
 
 
+def fixture_catalog():
+    """Signed in, the briefing loads the catalog itself; serve the fixture (not official) instead of the API."""
+    real = catalog.load_sessions
+    return mock.patch.object(catalog, "load_sessions", side_effect=lambda source="auto": real("fixture"))
+
+
 def wednesday_ids():
     return [s["id"] for s in catalog.load_fixture() if s["start"].startswith("2026-12-02")]
 
@@ -282,6 +288,7 @@ class BriefingTest(Base):
         self.web = web
         self.saved_agent = web._state["agent"]
         mock.patch.object(web, "_my_schedule", return_value=self.SCHEDULE).start()
+        fixture_catalog().start()
         self.addCleanup(mock.patch.stopall)
 
     def tearDown(self):

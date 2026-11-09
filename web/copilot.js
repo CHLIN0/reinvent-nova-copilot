@@ -142,7 +142,11 @@
     if (inline) { inline.replaceChildren(el("b", null, "Nova Copilot briefing"), b); inline.hidden = false; }
     try {
       const r = await api("/api/briefing", {});
-      const head = r.first_visit ? "Welcome! " : r.schedule_diff ? "Since your last visit: " + ["reserved", "favorites"].map(k => `${k} +${r.schedule_diff[k].added.length}/−${r.schedule_diff[k].removed.length}`).join(", ") + "\n\n" : "";
+      const cd = r.catalog_diff, n = (k, word) => `${k} ${word}${k === 1 ? "" : "s"}`;
+      const catalog = cd ? [cd.new && n(cd.new, "new session"), cd.moved.length && n(cd.moved.length, "reservation") + " moved",
+        cd.cancelled.length && n(cd.cancelled.length, "reservation") + " cancelled"].filter(Boolean).join(", ") : "";
+      const since = [r.schedule_diff && ["reserved", "favorites"].map(k => `${k} +${r.schedule_diff[k].added.length}/−${r.schedule_diff[k].removed.length}`).join(", "), catalog].filter(Boolean);
+      const head = r.first_visit ? "Welcome! " : since.length ? "Since your last visit: " + since.join("; ") + "\n\n" : "";
       for (const box of [a, b].filter(Boolean)) {
         box.textContent = head + r.text; if (r.trace.length) box.append(traceBox(r.trace));
         if ((r.suggested || []).length) box.append(sessionCards(r.suggested));

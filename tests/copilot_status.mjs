@@ -8,7 +8,7 @@ const { status: threeMinutes, sign_in: signInResponse } = process.argv[2]
   ? JSON.parse(readFileSync(0, "utf8"))
   : { status: { signed_in: true, seconds_left: 180, refreshable: false },
     sign_in: { authorization_url: "https://example.invalid/signin" } };
-async function page(initial, { scheduleFails = false } = {}) {
+async function page(initial, { scheduleFails = false, briefing = { text: "Offline welcome briefing", trace: [] } } = {}) {
   const created = [], timers = [], calls = [], announced = [];
   let status = initial, assigned;
   class Elem {
@@ -39,7 +39,7 @@ async function page(initial, { scheduleFails = false } = {}) {
       if (url === "/api/my-schedule" && scheduleFails) throw Error("schedule_unavailable");
       const data = { "/api/status": status,
         "/api/my-schedule": { signed_in: true, reserved: [], favorites: [] },
-        "/api/briefing": { text: "Offline welcome briefing", trace: [] },
+        "/api/briefing": briefing,
         "/api/auth/start": signInResponse }[url];
       assert.ok(data, `Unexpected request: ${url}`);
       return { ok: true, json: async () => data };
@@ -129,4 +129,10 @@ assert.match(failed.banner.textContent, /sign in again soon/);
 assert.match(failed.banner.textContent, /Could not read your official schedule/);
 await failed.open();
 assert.equal(failed.calls.filter(c => c.url === "/api/briefing").length, 1);
+// T6: the briefing head adds one clause for catalog changes since the last visit.
+const changed = await page(threeMinutes, { briefing: { text: "Offline welcome briefing", trace: [],
+  schedule_diff: { reserved: { added: [], removed: [] }, favorites: { added: [], removed: [] } },
+  catalog_diff: { new: 2, moved: [{ id: "syn-0007", code: "SYN-AI407" }], cancelled: [], recommended: ["SYN-SEC999"] } } });
+assert.match(changed.page["mine-briefing"].textContent,
+  /Since your last visit: reserved \+0\/−0, favorites \+0\/−0; 2 new sessions, 1 reservation moved\n\nOffline welcome briefing/);
 console.log("banner status checks passed");

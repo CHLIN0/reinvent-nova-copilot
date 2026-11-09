@@ -20,11 +20,12 @@ from unittest import mock
 
 import chat
 import web
-from atlas import tools
+from atlas import catalog, profile, tools
 from atlas.agent import Agent
 from atlas.prompts import SYSTEM_PROMPT
 from tests.test_agent import FakeBedrock, final, tool_use
-from tests.test_locked import RESERVED, Base, fixture_backend
+from tests.test_catalog_diff import SCHEDULE as T6_SCHEDULE, modified_catalog, official
+from tests.test_locked import RESERVED, Base, fixture_backend, fixture_catalog
 
 # Wednesday candidates that all overlap a reservation or cannot reach the next one in time.
 WED_NONE_FIT = ["syn-0003", "syn-0027", "syn-0051", "syn-0031", "syn-0055", "syn-0043", "syn-0039"]
@@ -189,6 +190,7 @@ class Battery(Base):
             {"id": "syn-0007", "code": "SYN-AI407", "start": "2026-12-02T10:30:00-08:00"},
             {"id": "syn-0019", "code": "SYN-GEN309", "start": "2026-12-02T15:00:00-08:00"}], "favorites": []}
         mock.patch.object(web, "_my_schedule", return_value=schedule).start()
+        fixture_catalog().start()
         long_tail = "Remember that walking between the Venetian and the Wynn takes longer than the map suggests. " * 2
         self.fake = FakeBedrock([
             tool_use("get_profile", {}, "p"),
@@ -249,6 +251,40 @@ class Battery(Base):
         self.assertTrue(text.endswith("\n週三除了你的預約，沒有其他場次排得進去。"), text)
         self.assertIn(f"未排入：另有 {n} 場未排入（列出 3 場：SYN-AI303、SYN-SEC107、SYN-ARC301），因為", text)
         self.assertIn("Running agents on serverless", text)  # titles stay in the original
+
+    # 8 ------------------------------------------------------------------------------------------
+    def test_briefing_with_catalog_diff(self):
+        """T6: since the last visit SYN-AI407 moved, SYN-GEN309 left the catalog and SYN-SEC999 is new on the
+        profile's interest; the prompt states these facts and the panel answer keeps every code the model cites."""
+        mock.patch.object(web, "_my_schedule", return_value=T6_SCHEDULE).start()
+        catalog.clear_cache()
+        self.addCleanup(catalog.clear_cache)
+        profile.update_profile({"interests": ["security"]})
+        with mock.patch.object(catalog, "list_sessions_live", return_value=official(catalog.load_fixture())):
+            web._state["agent"] = Agent(client=FakeBedrock([final("Welcome.")]), backend=self.be)
+            web._briefing()  # first visit: records the snapshot, reports nothing
+        catalog.clear_cache()
+        self.fake = FakeBedrock([
+            tool_use("get_profile", {}, "p"),
+            tool_use("check_itinerary", {"session_ids": ["syn-k002", "syn-0007"]}, "c"),
+            final("**SYN-AI407 moved** to Wednesday 13:00-14:00 at Mandalay Bay; SYN-GEN309 is no longer in the catalog.\n"
+                  "Wednesday has no conflicts after the move.\n"
+                  "New for you: SYN-SEC999 Securing agent tool calls end to end, Thursday 11:30 at the Venetian.\n"
+                  "Which hotel are you staying at?")])
+        web._state["agent"] = Agent(client=self.fake, backend=self.be)
+        with mock.patch.object(catalog, "list_sessions_live", return_value=modified_catalog()):
+            out = web._briefing()
+        prompt = self.fake.requests[0]["messages"][-1]["content"][0]["text"]
+        self.assertIn("SYN-SEC999", prompt)
+        self.assertIn("My reservation SYN-AI407 moved from Wed 2026-12-02 10:30-11:30", prompt)
+        text = out["text"]
+        self.assertPanel(text)
+        self.assertTrue(first_sentence(text).startswith("SYN-AI407 moved to Wednesday 13:00-14:00"), text)
+        for code in ("SYN-GEN309", "SYN-SEC999"):
+            self.assertIn(code, text)
+        self.assertEqual(out["removed"], [])
+        self.assertEqual(out["catalog_diff"]["recommended"], ["SYN-SEC999"])
+        self.assertEqual([m["code"] for m in out["catalog_diff"]["moved"]], ["SYN-AI407"])
 
     # prompt -------------------------------------------------------------------------------------
     def test_prompt_carries_the_panel_rules(self):

@@ -6,6 +6,7 @@ AWS Events; the model sees it only through the get_profile tool.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -117,12 +118,38 @@ def save_state(state: dict[str, Any], name: str | None = None) -> None:
 
     A reader (here or in another process) sees either the old or the new file, never a half-written one.
     """
+    _write_atomic(PROFILE_DIR / f"{_safe_name(name)}.state.json", state)
+
+
+def _catalog_path(name: str | None) -> Path:
+    return PROFILE_DIR / f"{_safe_name(name)}.catalog.json"
+
+
+def load_catalog_snapshot(name: str | None = None) -> dict[str, Any] | None:
+    """The official catalog as this profile's last briefing saw it; None before the first live one."""
+    p = _catalog_path(name)
+    return json.loads(p.read_text(encoding="utf-8")) if p.is_file() else None
+
+
+def save_catalog_snapshot(sessions: list[dict], name: str | None = None) -> dict[str, Any]:
+    """Compact snapshot (code, times, room, venue, title+abstract digest per session id), written like save_state."""
+    from datetime import datetime, timezone
+
+    snapshot = {"taken_at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "sessions": {
+        s["id"]: {"code": s.get("code") or "", "start": s.get("start") or "", "end": s.get("end") or "",
+                  "room": s.get("room") or "", "venue": s.get("venue") or "",
+                  "hash": hashlib.sha256(f"{s.get('title') or ''}\n{s.get('abstract') or ''}".encode()).hexdigest()[:12]}
+        for s in sessions}}
+    _write_atomic(_catalog_path(name), snapshot)
+    return snapshot
+
+
+def _write_atomic(p: Path, data: Any) -> None:
     PROFILE_DIR.mkdir(parents=True, exist_ok=True)
-    p = PROFILE_DIR / f"{_safe_name(name)}.state.json"
     fd, tmp = tempfile.mkstemp(prefix=f".{p.name}.", suffix=".tmp", dir=PROFILE_DIR)  # mkstemp creates 0600
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(state, f, ensure_ascii=False, indent=2)
+            json.dump(data, f, ensure_ascii=False, indent=2)
             f.flush()
             os.fsync(f.fileno())
         os.replace(tmp, p)

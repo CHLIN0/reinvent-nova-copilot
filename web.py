@@ -138,40 +138,102 @@ def _my_schedule() -> dict:
             "personal_time_count": len(sched["personalTime"])}
 
 
+_MOVE_KEYS = ("start", "end", "room", "venue")
+
+
+def _catalog_changes(before: dict, live: dict, reserved: list[str]) -> dict:
+    """Catalog snapshot vs live official catalog: new session ids, and moved or cancelled reservations."""
+    return {
+        "new": [sid for sid in live if sid not in before],
+        "moved": [{"id": sid, "code": live[sid].get("code") or "",
+                   "from": {k: before[sid].get(k) or "" for k in _MOVE_KEYS},
+                   "to": {k: live[sid].get(k) or "" for k in _MOVE_KEYS}}
+                  for sid in reserved if sid in before and sid in live
+                  and any((before[sid].get(k) or "") != (live[sid].get(k) or "") for k in _MOVE_KEYS)],
+        "cancelled": [{"id": sid, "code": before[sid].get("code") or ""} for sid in reserved if sid in before and sid not in live],
+    }
+
+
+def _recommend_new(new_ids: list[str], live: dict, limit: int = 10) -> list[dict]:
+    """Up to `limit` new sessions matching the profile: one search per interest (then role), union in ranked order."""
+    fields = profile.load_profile()["fields"]
+    queries = list(fields.get("interests") or []) + ([fields["role"]] if fields.get("role") else [])
+    level = str(fields.get("experience_level") or "")
+    new, picked = set(new_ids), {}
+    for q in queries:
+        for s in catalog.search_sessions(query=str(q), levels=[level] if level else None, limit=len(live)):
+            if s["id"] in new:
+                picked.setdefault(s["id"], s)
+    return list(picked.values())[:limit]
+
+
+def _when(s: dict) -> str:
+    from datetime import datetime
+
+    start, end = s.get("start") or "", s.get("end") or ""
+    return f"{datetime.fromisoformat(start):%a} {start[:10]} {start[11:16]}-{end[11:16]}" if start else "(no time)"
+
+
 def _briefing() -> dict:
     """Welcome-back: compare the official schedule with the last saved snapshot, then ask Nova for a short plan."""
     from atlas import guard
 
     sched = _my_schedule() if official_auth.is_signed_in() else {"signed_in": False}
+    live = None  # the catalog, only when it fully loaded from the official API (never the fixture or a fallback)
+    if sched.get("signed_in"):
+        sessions = catalog.load_sessions()
+        if catalog.last_source()["source"] == "official_api":
+            live = {s["id"]: s for s in sessions}
 
     def visit(state: dict):  # locked read-modify-write: never overwrites a plan saved meanwhile
-        diff = None
+        diff = changes = None
         if sched.get("signed_in"):
             now = {"reserved": [r["id"] for r in sched["reserved"]], "favorites": [r["id"] for r in sched["favorites"]]}
             before = state.get("schedule") or {}
             diff = {k: {"added": [i for i in now[k] if i not in (before.get(k) or [])],
                         "removed": [i for i in (before.get(k) or []) if i not in now[k]]} for k in now} if before else None
             state["schedule"] = now
+            if live is not None:
+                snapshot = profile.load_catalog_snapshot()
+                if snapshot:
+                    # reserved now or at the last visit: a cancelled session may also have left GetSchedule
+                    reserved = list(dict.fromkeys(now["reserved"] + (before.get("reserved") or [])))
+                    changes = _catalog_changes(snapshot["sessions"], live, reserved)
+                profile.save_catalog_snapshot(list(live.values()))
         first_visit = not state.get("visits")
         state["visits"] = int(state.get("visits") or 0) + 1
-        return diff, first_visit
+        return diff, first_visit, changes
 
-    diff, first_visit = profile.update_state(visit)
+    diff, first_visit, changes = profile.update_state(visit)
+    recommended = _recommend_new(changes["new"], live) if changes else []
     by_day: dict[str, list[str]] = {}
     for r in sched.get("reserved") or []:
         if r.get("start"):
             by_day.setdefault(r["start"][:10], []).append(r["id"])
     checks = "; ".join(f"{day}: {json.dumps(ids)}" for day, ids in sorted(by_day.items()))
+    facts = ([f"New in the official catalog since my last visit, matching my profile: "
+              + "; ".join(f'{s["code"]} "{s["title"]}" ({_when(s)}, {s.get("venue_name") or s.get("venue")})' for s in recommended) + ". "]
+             if recommended else []) \
+        + [f"My reservation {m['code']} moved from {_when(m['from'])}, {m['from']['room']}, {m['from']['venue']} "
+           f"to {_when(m['to'])}, {m['to']['room']}, {m['to']['venue']}. " for m in (changes or {}).get("moved", [])] \
+        + [f"My reservation {c['code']} is no longer in the official catalog. " for c in (changes or {}).get("cancelled", [])]
     prompt = ("Brief me as I open the app (this is not a new question). Call get_profile and get_my_schedule. "
               + ("This is my first visit. " if first_visit else f"Since my last visit my official schedule changed: {json.dumps(diff)}. " if diff else "")
+              + "".join(facts)
               + (f"Before saying anything about feasibility, call check_itinerary once per conference day with these reserved session ids: {checks}. "
                  if checks else "Do not claim any schedule is feasible unless check_itinerary or plan_itinerary confirmed it. ")
-              + "In under 120 words: 1) name any conflict or tight transition the checks found, "
-              "2) recommend what to do next (sessions to add on days with gaps, or what to fix), "
+              + "In under 120 words: 1) name any "
+              + ("moved or cancelled reservation, " if changes and (changes["moved"] or changes["cancelled"]) else "")
+              + "conflict or tight transition the checks found, "
+              "2) recommend what to do next ("
+              + ("the new sessions above, " if recommended else "")
+              + "sessions to add on days with gaps, or what to fix), "
               "3) if my profile is missing my hotel or walking limit, ask for it in one line.")
     out = _chat(prompt, allow_write=False, feature="briefing")
     out["text"], out["removed"] = guard.strip_unverified_feasibility(out["text"], out["trace"])
     out["schedule_diff"] = diff
+    out["catalog_diff"] = {"new": len(changes["new"]), "moved": changes["moved"], "cancelled": changes["cancelled"],
+                           "recommended": [s["code"] for s in recommended]} if changes else None
     out["first_visit"] = first_visit
     return out
 
