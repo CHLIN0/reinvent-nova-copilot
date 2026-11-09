@@ -31,7 +31,7 @@ async function page(initial, { scheduleFails = false, briefing = { text: "Offlin
   runInNewContext(source, {
     document: { body, createElement: tag => new Elem(tag), getElementById: id => slots[id] || null,
       createTextNode: text => Object.assign(new Elem("#text"), { textContent: text }), querySelector: () => null },
-    window: { dispatchEvent(e) { if (e.type === "atlas:auth-status") announced.push({ ...e.detail }); } }, Event, CustomEvent, Date,
+    window: { addEventListener() {}, dispatchEvent(e) { if (e.type === "atlas:auth-status") announced.push({ ...e.detail }); } }, Event, CustomEvent, Date,
     location: { assign: url => { assigned = url; } },
     setInterval: (fn, ms) => timers.push({ fn, ms }),
     fetch: async (url, init = {}) => {

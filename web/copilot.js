@@ -71,31 +71,77 @@
     } catch (e) { msg.textContent = "Could not add to “我的安排”: " + e.message; }
   }
 
-  // Suggested sessions with explicit RSVP / favorite buttons: the model proposes, the attendee clicks.
+  // Suggested sessions with explicit RSVP / favorite / cancel buttons: the model proposes, the attendee clicks.
+  // Each card shows its official state from /api/plan: reserved → reserved + cancel (never RSVP); favorite → favorited + RSVP.
+  const SEATS = {available: "Seats available", limited: "Limited seats", veryLimited: "Very few seats left", unavailable: "Full", walkUp: "Walk-up only, no reservation"};
+  const FAILURES = {  // the official per-item codes (ReserveSessions / AssociateFavorites), plus CancelReservation's 409/401/429/5xx
+    sessionNotReservable: "This session does not take reservations.",
+    scheduleConflict: "It overlaps a session already on your schedule.",
+    alreadyScheduled: "It is already on your schedule.",
+    sessionFull: "The session is full.",
+    insufficientAccess: "Your registration does not give access to this session.",
+    timePassed: "The session has already started or ended.",
+    alreadyFavorited: "It is already in your favorites.",
+    notFavorited: "It is not in your favorites.",
+    other: "AWS Events refused it without giving a reason.",
+    operationClosed: "AWS Events is not accepting this change right now; try again later.",
+    not_reported: "AWS Events did not report a result for it; check your schedule in AWS Events.",
+    official_sign_in_required: "Your sign-in expired; sign in to AWS Events again.",
+    official_rate_limited: "AWS Events is busy; wait a minute and try again.",
+    catalog_unavailable: "AWS Events did not answer; check your schedule before trying again.",
+  };
+  const failureText = (it, codeOf) => {
+    const also = it.conflicts_with?.length ? ` (${it.conflicts_with.map(codeOf).join(", ")})` : "";
+    const text = FAILURES[it.code];
+    return text ? text.replace(/\.$/, also + ".") : `AWS Events refused it (code: ${it.code || "none"})${also}; see AWS Events.`;
+  };
+  // Every card set re-reads the official state when the plan changes (here or in Atlas); one read serves them all.
+  const cardSets = new Set(); let planRead = null;
+  const readPlanOnce = () => (planRead ||= api("/api/plan").finally(() => { planRead = null; }));
+  window.addEventListener("atlas:plan-changed", () => { for (const read of cardSets) read(); });
   function sessionCards(rows) {
-    const box = el("div", "nc-cards");
-    for (const s of rows) {
-      const c = el("div", "nc-card");
-      c.append(el("div", "nc-t", `${(s.start || "").slice(5, 10)} ${hhmm(s.start)}–${hhmm(s.end)}  ${s.code || ""}`), el("div", null, s.title || ""), el("div", "nc-sub", s.venue || ""));
-      const row = el("div", "nc-actions"); const out = el("div", "nc-sub");
-      for (const [label, path] of [["RSVP", "/api/rsvp"], ["☆ Favorite", "/api/favorite"]]) {
-        const b = el("button", label === "RSVP" ? "nc-btn" : "nc-btn2", label); b.type = "button";
-        b.addEventListener("click", async () => {
-          if (label === "RSVP" && !confirm(`Reserve a seat for ${s.code || s.title} in your official AWS Events schedule?`)) return;
-          b.disabled = true; out.textContent = "Sending to AWS Events…";
-          try {
-            const r = await api(path, {session_ids: [s.id]}); const it = (r.results || [])[0] || {};
-            const inSched = it.in_schedule_reserved ?? it.in_schedule_favorites;
-            out.textContent = it.ok && inSched ? `✓ Done and verified in your official schedule (${label === "RSVP" ? "reserved" : "favorites"}).`
-              : it.ok ? "Accepted, but not yet visible in your schedule read-back. Check the AWS Events app."
-              : `Not done: ${it.code || "rejected"}${it.conflicts_with ? " (conflicts with " + it.conflicts_with.join(", ") + ")" : ""}.`;
-            if (it.ok) loadOfficial();
-          } catch (e) { out.textContent = "Not done: " + e.message + (/sign_in/.test(e.message) ? " Sign in to AWS Events first." : ""); b.disabled = false; }
-        });
-        row.append(b);
-      }
-      c.append(row, out); box.append(c);
+    const box = el("div", "nc-cards"); const cards = [];
+    let official = {}, codes = {};
+    const when = s => `${(s.start || "").slice(5, 10)} ${hhmm(s.start)}–${hhmm(s.end)}`;
+    const named = s => `${s.code || s.id} “${s.title || ""}” (${when(s)})`;
+    async function readPlan() {
+      try {  // a failed read, or an official read that failed, keeps the last known state (Cancel never turns into RSVP)
+        const p = await readPlanOnce(); const status = p.official?.status;
+        codes = Object.fromEntries((p.items || []).map(i => [i.session_id, i.code || i.session_id]));
+        if (status !== "error") official = Object.fromEntries((p.items || []).filter(i => status === "live" && i.source !== "local").map(i => [i.session_id, i.source]));
+      } catch { /* keep the last known state */ }
+      for (const render of cards) render();
     }
+    for (const s of rows) {
+      const c = el("div", "nc-card"); const state = el("div", "nc-sub"); const row = el("div", "nc-actions"); const out = el("div", "nc-sub");
+      c.append(el("div", "nc-t", `${when(s)}  ${s.code || ""}`), el("div", null, s.title || ""), el("div", "nc-sub", s.venue || ""));
+      if (SEATS[s.seats]) c.append(el("div", "nc-sub", SEATS[s.seats]));
+      const act = async (path, b) => {
+        const cancel = path === "/api/rsvp/cancel";
+        const ask = cancel ? `Cancel your official reservation for ${named(s)}? Your seat is released and may not be available again.`
+          : path === "/api/rsvp" ? `Reserve a seat for ${named(s)} in your official AWS Events schedule?` : null;
+        if (ask && !confirm(ask)) return;
+        b.disabled = true; out.textContent = "Sending to AWS Events…";
+        try {
+          const r = await api(path, {session_ids: [s.id]}); const it = (r.results || [])[0] || {};
+          const verified = cancel ? it.in_schedule_reserved === false : (it.in_schedule_reserved ?? it.in_schedule_favorites);
+          out.textContent = it.ok && verified ? (cancel ? (it.already_gone ? "✓ It was already not reserved; verified in your official schedule." : "✓ Cancelled and verified in your official schedule (no longer reserved).")
+              : `✓ Done and verified in your official schedule (${path === "/api/rsvp" ? "reserved" : "favorites"}).`)
+            : it.ok ? (cancel ? "Cancel accepted, but your schedule read-back still lists it as reserved. Check the AWS Events app." : "Accepted, but not yet visible in your schedule read-back. Check the AWS Events app.")
+            : "Not done: " + failureText(it, id => codes[id] || id);
+          if (it.ok) { loadOfficial(); await readPlan(); } else b.disabled = false;  // refused: nothing changed, retry stays possible
+        } catch (e) { out.textContent = "Not done: " + e.message + (/sign_in/.test(e.message) ? " Sign in to AWS Events first." : ""); b.disabled = false; }
+      };
+      cards.push(() => {
+        const src = official[s.id];
+        state.textContent = src === "reserved" ? "✓ Reserved in your official schedule" : src === "favorite" ? "★ In your official favorites" : "";
+        const actions = src === "reserved" ? [["Cancel reservation", "/api/rsvp/cancel", "nc-btn2"]]
+          : [["RSVP", "/api/rsvp", "nc-btn"], ...(src === "favorite" ? [] : [["☆ Favorite", "/api/favorite", "nc-btn2"]])];
+        row.replaceChildren(...actions.map(([label, path, cls]) => { const b = el("button", cls, label); b.type = "button"; b.addEventListener("click", () => act(path, b)); return b; }));
+      });
+      c.append(state, row, out); box.append(c);
+    }
+    cardSets.add(readPlan); readPlan();
     return box;
   }
 

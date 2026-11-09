@@ -61,6 +61,7 @@ _MESSAGES = {
     "official_event_access_required": "Signed in but not registered for this event (403).",
     "official_event_not_found": "Event or session not found (404).",
     "official_rate_limited": "Rate limited by the AWS Events API (429) after retries.",
+    "official_operation_closed": "AWS Events has closed this operation for now (409); retrying will not help yet.",
 }
 
 
@@ -144,7 +145,9 @@ def _request(method, path, query=None, body=None, authenticated=True, response_h
         if status in (403, 404):
             code = "official_event_access_required" if status == 403 else "official_event_not_found"
             raise CatalogError(code, message=_MESSAGES[code])
-        if status not in (200, 201):
+        if status == 409:
+            raise CatalogError("official_operation_closed", message=_MESSAGES["official_operation_closed"])
+        if status not in (200, 201, 204):
             raise CatalogError("catalog_unavailable", message=f"AWS Events API returned HTTP {status}.")
         try:
             data = json.loads(raw) if raw else {}
@@ -466,6 +469,36 @@ def reserve_sessions(session_ids: list, event_id: str = EVENT_ID) -> dict:
                 entry["conflicts_with"] = list(failure["conflictsWith"])
         items.append(entry)
     return {"results": items, "verified": all(e["in_schedule_reserved"] for e in items if e["ok"])}
+
+
+def cancel_reservations(session_ids: list, event_id: str = EVENT_ID) -> dict:
+    """Official CancelReservation for 1-10 distinct ids: per-item result, then GetSchedule read-back.
+
+    The API cancels one session per call (DELETE /v1/events/{eventId}/reservations/{sessionId}, 204).
+    A 404 means there was no reservation for it, which the developer guide says to treat as already done;
+    a 409 means cancelling is closed for now. An item is verified when it is no longer in `reserved`.
+    Called only from an explicit user click in the web app, never by the model.
+    """
+    _require_live()
+    ids = list(dict.fromkeys(i for i in session_ids if isinstance(i, str) and i))
+    if not 1 <= len(ids) <= 10:
+        raise ValueError("cancel_reservations takes 1 to 10 distinct session ids")
+    items = []
+    for sid in ids:
+        entry = {"session_id": sid, "ok": True}
+        try:
+            _request("DELETE", "/v1/events/" + quote(event_id, safe="") + "/reservations/" + quote(sid, safe=""))
+        except CatalogError as error:
+            if error.code == "official_event_not_found":
+                entry["already_gone"] = True
+            else:
+                entry.update(ok=False, code="operationClosed" if error.code == "official_operation_closed"
+                             else error.code)
+        items.append(entry)
+    reserved = set(get_schedule(event_id)["reserved"])
+    for entry in items:
+        entry["in_schedule_reserved"] = entry["session_id"] in reserved
+    return {"results": items, "verified": all(not e["in_schedule_reserved"] for e in items if e["ok"])}
 
 
 def add_favorites(session_ids: list, event_id: str = EVENT_ID) -> dict:

@@ -249,7 +249,19 @@ def _suggested(res) -> list[dict]:
             if isinstance(s, dict) and s.get("code"):
                 seen_rows[s["code"]] = s
     rows = plan_rows or [s for code, s in seen_rows.items() if code in (res.text or "")]
-    return [{k: s.get(k) for k in ("id", "code", "title", "start", "end", "venue")} for s in rows][:10]
+    be = getattr(_state["agent"], "backend", None)  # the catalog the tools just used
+
+    def seats(s):  # plan rows carry no seat band: take it from a search row in this trace, else the catalog
+        found = s.get("seats") or seen_rows.get(s.get("code"), {}).get("seats")
+        if not found and s.get("id"):
+            try:
+                found = ((be.get_session if be else catalog.get_session)(s["id"]) or {}).get("seats")
+            except Exception:  # seat words are optional; never fail the answer for them
+                found = ""
+        return found or ""
+
+    return [{**{k: s.get(k) for k in ("id", "code", "title", "start", "end", "venue")}, "seats": seats(s)}
+            for s in rows[:10]]
 
 
 def _chat(message: str, allow_write: bool, feature: str = "chat") -> dict:
@@ -499,6 +511,9 @@ class Handler(BaseHTTPRequestHandler):
                 ids = [i for i in (body.get("session_ids") or []) if isinstance(i, str)]
                 fn = catalog.reserve_sessions if self.path == "/api/rsvp" else catalog.add_favorites
                 return self._json(200, fn(ids))
+            if self.path == "/api/rsvp/cancel":  # click-only, like /api/rsvp; never a model tool
+                ids = [i for i in (body.get("session_ids") or []) if isinstance(i, str)]
+                return self._json(200, catalog.cancel_reservations(ids))
             if self.path == "/api/briefing":
                 return self._json(200, _briefing())
             if self.path == "/api/reset":

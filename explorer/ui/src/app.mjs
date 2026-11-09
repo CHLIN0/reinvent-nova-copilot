@@ -19,7 +19,15 @@ import {
   DISCOVERY_DIMENSIONS,
 } from "./discovery.mjs";
 import { createScene, VENUES } from "./scene.mjs";
-import { createPlanStore, watchPlan } from "./plan-store.mjs";
+import { createPlanStore, watchPlan, PLAN_CHANGED } from "./plan-store.mjs";
+import {
+  seatText,
+  planButtonText as planButtonLabel,
+  planToggleDisabled as planToggleOff,
+  cancelConfirmText,
+  cancelResultText,
+  cancelReservation,
+} from "./rsvp.mjs";
 import {
   homeDay,
   dayAgenda,
@@ -200,14 +208,15 @@ function canonicalPlan(items) {
   });
 }
 function planButtonText(r) {
-  const p = planItem(r);
-  if (!p) return "＋ 加入我的安排";
-  if (p.source === "reserved") return "✓ 官方已預約 · 請在 AWS Events 變更";
-  if (p.source === "favorite") return "★ 官方收藏 · 請在 AWS Events 變更";
-  return "● 已在我的安排 · 移除";
+  return planButtonLabel(planItem(r));
 }
 function planToggleDisabled(r) {
-  return planUnavailable || ["reserved", "favorite"].includes(planItem(r)?.source);
+  return planToggleOff(planItem(r), planUnavailable);
+}
+function planNoteText(r) {
+  return planItem(r)?.source === "reserved"
+    ? "✓ 官方已預約。取消會送到 AWS Events，並重新讀取官方行程確認。"
+    : "只修改本機安排，不提交 RSVP；可以保留重疊。";
 }
 function timeText(r) {
   return r.times
@@ -467,6 +476,8 @@ function mineItem(p) {
         "地點尚未公布",
     ),
   );
+  if (seatText(r?.session.seat_availability))
+    main.append(el("span", "mine-seats", seatText(r.session.seat_availability)));
   b.append(main);
   b.setAttribute("aria-label", `${planLabel(p)}：${p.code} ${p.title}，${localClock(p.start)}–${localClock(p.end)}`);
   if (r) b.addEventListener("click", () => select(r.key));
@@ -653,6 +664,8 @@ async function renderReader(r) {
     el("p", "detail-location", r.session.location || "地點尚未公布"),
     el("p", "detail-level", r.levels.join(" · ") || "等級尚未公布"),
   );
+  if (seatText(r.session.seat_availability))
+    place.append(el("p", "detail-seats", seatText(r.session.seat_availability)));
   root.append(place);
   if (r.levels.length > 1)
     root.append(
@@ -677,10 +690,9 @@ async function renderReader(r) {
       "secondary",
     ),
   );
-  root.append(
-    actions,
-    el("p", "local-note", "只修改本機安排，不提交 RSVP；可以保留重疊。"),
-  );
+  const planNote = el("p", "local-note", planNoteText(r));
+  planNote.dataset.planNote = "";
+  root.append(actions, planNote);
   const translateButton = button(
     "翻譯 / Translate",
     requestTranslation,
@@ -798,7 +810,24 @@ async function changePlan(item, action) {
   }
 }
 function togglePlan(r) {
+  if (planItem(r)?.source === "reserved") return cancelOfficial(r);
   return changePlan(makePlanItem(r), isPlanned(r) ? "remove" : "add");
+}
+// Official cancel: confirm naming the session → CancelReservation → GetSchedule read-back → re-read /api/plan.
+async function cancelOfficial(r) {
+  const p = planItem(r);
+  if (!confirm(cancelConfirmText(p, timeText(r)))) return;
+  const b = $("reader").querySelector("[data-plan-toggle]");
+  if (b) b.disabled = true;
+  notify("正在向 AWS Events 取消預約…");
+  try {
+    const item = await cancelReservation(r.session.session_id);
+    const byId = new Map(records.map((x) => [x.session.session_id, x.session.code]));
+    notify(cancelResultText(item, (id) => byId.get(id) || id));
+  } catch (error) {
+    notify("未取消：" + (error.message || "請稍後再試。"));
+  }
+  window.dispatchEvent(new Event(PLAN_CHANGED)); // re-reads /api/plan here and on Copilot's cards
 }
 function refreshPlanButton() {
   const r = selectedRecord();
@@ -807,6 +836,8 @@ function refreshPlanButton() {
     b.textContent = planButtonText(r);
     b.disabled = planToggleDisabled(r);
   }
+  const note = $("reader").querySelector("[data-plan-note]");
+  if (r && note) note.textContent = planNoteText(r);
 }
 // Re-reads /api/plan on Copilot's update event and when the tab is shown again (see watchPlan).
 // Signed in → My re:Invent on the attendee's day; signed out → Explore. Either proof of sign-in
