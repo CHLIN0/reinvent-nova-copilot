@@ -31,6 +31,7 @@ MIN_REFRESH_SECONDS = 60.0
 PUBLIC_TEXT_FIELDS = (
     'session_id', 'code', 'title', 'abstract', 'date_iso', 'start_local',
     'end_local', 'venue', 'location', 'type', 'level', 'source', 'observed_at',
+    'seat_availability',
 )
 STATIC_FILES = {
     '/': ('index.html', 'text/html; charset=utf-8'),

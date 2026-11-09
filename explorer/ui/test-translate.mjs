@@ -43,6 +43,8 @@ function setup(fetch) {
     planButtonText: () => "Plan",
     togglePlan() {},
     planToggleDisabled: () => false,
+    planNoteText: () => "",
+    seatText: () => "",
     timeText: () => "09:00",
     observationLabel: () => "today",
     sourceTimingNote: () => "",
