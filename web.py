@@ -386,7 +386,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(404 if e.code == "session_not_found" else 502, {"error": e.code})
             except Exception as e:  # Never expose Bedrock errors or credential details.
                 return self._json(502, {"error": getattr(e, "code", "translation_unavailable")})
-        if path_only in ("/", "/index.html") and _state.get("explorer_port"):
+        if path_only in ("/", "/index.html"):
+            if not (_state.get("explorer_port") and (EXPLORER_DIST / "index.html").is_file()):
+                return self._send(503, b"Event Atlas is not built. Build it with: cd explorer/ui && node build.mjs\n",
+                                  "text/plain; charset=utf-8")
             html = (EXPLORER_DIST / "index.html").read_text(encoding="utf-8")
             html = html.replace("</head>", '<link rel="stylesheet" href="/copilot.css" />\n</head>', 1)
             html = html.replace("</body>", '<script src="/copilot.js" defer></script>\n</body>', 1)
@@ -396,8 +399,6 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, (ROOT / self.path[1:]).read_bytes(), ctype)
         if self.path in EXPLORER_PATHS or self.path.startswith("/geo/"):
             return self._proxy_explorer()
-        if self.path in ("/", "/index.html", "/copilot"):
-            return self._send(200, (ROOT / "index.html").read_bytes(), "text/html; charset=utf-8")
         if self.path == "/api/status":
             return self._json(200, _status())
         if self.path == "/api/my-schedule":
@@ -442,8 +443,6 @@ class Handler(BaseHTTPRequestHandler):
                 if _state["agent"]:
                     _state["agent"].reset()
                 return self._json(200, {"ok": True})
-            if self.path == "/api/signin":
-                return self._json(200, _start_sign_in(self._origin()))
             if self.path == "/api/auth/start":  # Event Atlas sign-in button: same shared login
                 st = _start_sign_in(self._origin())
                 if not st["sign_in"]["url"]:
@@ -452,9 +451,6 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == "/api/plan":
                 ids = body.get("session_ids") if isinstance(body.get("session_ids"), list) else [body.get("session_id")]
                 return self._json(200, _change_plan(body.get("action"), ids))
-            if self.path == "/api/profile":
-                updates = body.get("updates") or {}
-                return self._json(200, profile.update_profile(updates))
         except ValueError as e:
             return self._json(400, {"error": str(e)})
         except Exception as e:
@@ -515,7 +511,7 @@ def main() -> None:
         start_explorer(a.explorer_port)
         _state["explorer_port"] = a.explorer_port
         _state["explorer_url"] = f"http://127.0.0.1:{a.port}/"
-    print(f"re:Invent Nova Copilot + Event Atlas: http://127.0.0.1:{a.port}/   (chat-only view: /copilot)  Ctrl-C to stop")
+    print(f"re:Invent Nova Copilot + Event Atlas: http://127.0.0.1:{a.port}/   Ctrl-C to stop")
     srv.serve_forever()
 
 

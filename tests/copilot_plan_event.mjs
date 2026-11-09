@@ -57,4 +57,5 @@ add.click();
 await settle();
 const post = calls.find((c) => c.url === "/api/plan" && c.method === "POST");
 const message = add && created[created.indexOf(add) + 1]?.textContent;
-console.log(JSON.stringify({ post: post?.body ?? null, events, message }));
+const tabs = created.find((e) => e.className === "nc-tabs").children.map((b) => b.textContent);
+console.log(JSON.stringify({ post: post?.body ?? null, events, message, tabs }));

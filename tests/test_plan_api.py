@@ -178,6 +178,7 @@ class PlanApiTests(unittest.TestCase):
         self.assertEqual(report["post"], {"action": "add", "session_ids": ["syn-0001"]})
         self.assertEqual(report["events"], [PLAN_CHANGED])  # refresh event fired; no page reload
         self.assertIn("Added 1 session", report["message"])
+        self.assertEqual(report["tabs"], ["Ask"])  # no "Your day" or "Profile" tab: Atlas shows the plan
 
     def test_built_atlas_has_no_browser_storage_for_the_plan(self):
         bundle = DIST.read_text(encoding="utf-8")

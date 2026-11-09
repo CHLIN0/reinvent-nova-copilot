@@ -70,6 +70,8 @@ assert.equal(warning.panel.hidden, false, "The header toggle opens the docked pa
 assert.ok(warning.bodyClasses.has("nc-docked"));
 assert.equal(warning.calls.filter(c => c.url === "/api/briefing").length, 1,
   "Opening Copilot with three minutes left must not request a second briefing");
+assert.deepEqual(warning.panel.children.find(e => e.className === "nc-tabs").children.map(b => b.textContent), ["Ask"],
+  "The panel has no plan or profile tab: My re:Invent shows the plan, the profile is edited by asking");
 assert.equal(warning.banner.className, "nc-warn");
 await warning.open();
 assert.equal(warning.panel.hidden, true, "The same toggle closes it");

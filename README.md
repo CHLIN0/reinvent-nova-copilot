@@ -74,7 +74,6 @@ Open http://127.0.0.1:8500/ . One page, one sign-in:
 - **Event Atlas** (main view): the official catalog with multi-select filters, five-day and single-day calendars, and a 3D campus map built from OpenStreetMap footprints.
 - **Nova Copilot** (button at bottom right): Amazon Nova Pro answers with tool-checked facts, plans your day from and back to your hotel with route estimates, and adds the plan to your Event Atlas calendar in one click.
 - **Sign in with AWS Builder ID** once; both views share the same in-memory token. Without sign-in, the copilot uses the synthetic demo catalog.
-- `/copilot` is a chat-only view.
 
 ## Run (command line)
 
