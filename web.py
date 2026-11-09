@@ -141,8 +141,10 @@ def _my_schedule() -> dict:
 _MOVE_KEYS = ("start", "end", "room", "venue")
 
 
-def _catalog_changes(before: dict, live: dict, reserved: list[str]) -> dict:
-    """Catalog snapshot vs live official catalog: new session ids, and moved or cancelled reservations."""
+def _catalog_changes(before: dict, live: dict, reserved: list[str], reserved_then: list[str]) -> dict:
+    """Catalog snapshot vs live official catalog: new session ids, current reservations that moved, and
+    reservations (current or as of the snapshot; a cancelled one may also have left GetSchedule) no longer listed."""
+    was_reserved = list(dict.fromkeys(reserved + reserved_then))
     return {
         "new": [sid for sid in live if sid not in before],
         "moved": [{"id": sid, "code": live[sid].get("code") or "",
@@ -150,7 +152,7 @@ def _catalog_changes(before: dict, live: dict, reserved: list[str]) -> dict:
                    "to": {k: live[sid].get(k) or "" for k in _MOVE_KEYS}}
                   for sid in reserved if sid in before and sid in live
                   and any((before[sid].get(k) or "") != (live[sid].get(k) or "") for k in _MOVE_KEYS)],
-        "cancelled": [{"id": sid, "code": before[sid].get("code") or ""} for sid in reserved if sid in before and sid not in live],
+        "cancelled": [{"id": sid, "code": before[sid].get("code") or ""} for sid in was_reserved if sid in before and sid not in live],
     }
 
 
@@ -182,7 +184,7 @@ def _briefing() -> dict:
     live = None  # the catalog, only when it fully loaded from the official API (never the fixture or a fallback)
     if sched.get("signed_in"):
         sessions = catalog.load_sessions()
-        if catalog.last_source()["source"] == "official_api":
+        if sessions and all(s.get("source") == "official_api" for s in sessions):  # the rows, not the global last_source()
             live = {s["id"]: s for s in sessions}
 
     def visit(state: dict):  # locked read-modify-write: never overwrites a plan saved meanwhile
@@ -196,10 +198,8 @@ def _briefing() -> dict:
             if live is not None:
                 snapshot = profile.load_catalog_snapshot()
                 if snapshot:
-                    # reserved now or at the last visit: a cancelled session may also have left GetSchedule
-                    reserved = list(dict.fromkeys(now["reserved"] + (before.get("reserved") or [])))
-                    changes = _catalog_changes(snapshot["sessions"], live, reserved)
-                profile.save_catalog_snapshot(list(live.values()))
+                    changes = _catalog_changes(snapshot["sessions"], live, now["reserved"], snapshot.get("reserved") or [])
+                profile.save_catalog_snapshot(list(live.values()), now["reserved"])
         first_visit = not state.get("visits")
         state["visits"] = int(state.get("visits") or 0) + 1
         return diff, first_visit, changes
@@ -211,7 +211,7 @@ def _briefing() -> dict:
         if r.get("start"):
             by_day.setdefault(r["start"][:10], []).append(r["id"])
     checks = "; ".join(f"{day}: {json.dumps(ids)}" for day, ids in sorted(by_day.items()))
-    facts = ([f"New in the official catalog since my last visit, matching my profile: "
+    facts = ([f"The complete list of sessions new in the official catalog since my last visit that match my profile: "
               + "; ".join(f'{s["code"]} "{s["title"]}" ({_when(s)}, {s.get("venue_name") or s.get("venue")})' for s in recommended) + ". "]
              if recommended else []) \
         + [f"My reservation {m['code']} moved from {_when(m['from'])}, {m['from']['room']}, {m['from']['venue']} "

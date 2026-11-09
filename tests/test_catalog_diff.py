@@ -57,9 +57,12 @@ class CatalogDiffTest(Base):
         web._state["agent"] = self.saved_agent
         super().tearDown()
 
-    def brief(self, live, script=None):
-        """One briefing; `live` is what ListSessions returns, or an exception (the fixture fallback)."""
+    def brief(self, live, script=None, reserved=None):
+        """One briefing; `live` is what ListSessions returns, or an exception (the fixture fallback).
+        `reserved` keeps only these of SCHEDULE's reservations in GetSchedule."""
         catalog.clear_cache()
+        rows = [r for r in SCHEDULE["reserved"] if reserved is None or r["id"] in reserved]
+        web._my_schedule.return_value = dict(SCHEDULE, reserved=rows)
         self.fake = FakeBedrock(script or [final("Hello.")])
         web._state["agent"] = Agent(client=self.fake, backend=fixture_backend(
             {"reserved": RESERVED, "favorites": [], "personalTime": []}))
@@ -76,6 +79,7 @@ class CatalogDiffTest(Base):
         snap = json.loads(self.snapshot_path.read_text())
         self.assertEqual(len(snap["sessions"]), len(catalog.load_fixture()))
         self.assertEqual(set(snap["sessions"]["syn-0007"]), {"code", "start", "end", "room", "venue", "hash"})
+        self.assertEqual(snap["reserved"], RESERVED)
         self.assertEqual(stat.S_IMODE(os.stat(self.snapshot_path).st_mode), 0o600)
         self.assertNotIn("sessions", profile.load_state())  # the snapshot stays out of state.json
 
@@ -90,7 +94,8 @@ class CatalogDiffTest(Base):
                        "to": MOVED_TO}],
             "cancelled": [{"id": "syn-0019", "code": "SYN-GEN309"}],
             "recommended": ["SYN-SEC999"]})
-        self.assertIn('SYN-SEC999 "Securing agent tool calls end to end" (Thu 2026-12-03 11:30-12:30, venetian)', prompt)
+        self.assertIn("The complete list of sessions new in the official catalog since my last visit that match my profile: "
+                      'SYN-SEC999 "Securing agent tool calls end to end" (Thu 2026-12-03 11:30-12:30, venetian).', prompt)
         self.assertNotIn("SYN-MUS998", prompt)
         self.assertIn("My reservation SYN-AI407 moved from Wed 2026-12-02 10:30-11:30, Convention Promenade, Room 178, "
                       "wynn to Wed 2026-12-02 13:00-14:00, South Convention, Room 101, mandalay_bay.", prompt)
@@ -113,12 +118,31 @@ class CatalogDiffTest(Base):
         self.assertNotIn("no longer in the official catalog", prompt)
         self.assertEqual(self.snapshot_path.read_bytes(), before)
 
-    def test_fixture_source_never_writes_a_snapshot(self):
+    def test_fixture_rows_never_write_a_snapshot_even_if_last_source_says_official(self):
+        """Codex T6 r1 P1: another request may set the process-global last_source() to official_api
+        after this briefing received fixture rows; the rows decide."""
         with mock.patch.object(catalog, "load_sessions", side_effect=lambda source="auto": catalog.load_fixture()), \
-             mock.patch.object(catalog, "last_source", return_value={"source": "synthetic_fixture", "reason": "requested"}):
+             mock.patch.object(catalog, "last_source", return_value={"source": "official_api", "reason": "live"}):
             out, _ = self.brief(official(catalog.load_fixture()))
         self.assertIsNone(out["catalog_diff"])
         self.assertFalse(self.snapshot_path.exists())
+
+    def test_cancellation_survives_a_fallback_visit(self):
+        """Codex T6 r1 P2: SYN-GEN309 leaves GetSchedule and the catalog during an outage visit;
+        the next live visit still reports it cancelled."""
+        self.brief(official(catalog.load_fixture()))
+        without_gen309 = ["syn-k002", "syn-0007"]
+        self.brief(catalog.CatalogError("catalog_unavailable"), reserved=without_gen309)
+        out, prompt = self.brief(modified_catalog(), reserved=without_gen309)
+        self.assertEqual(out["catalog_diff"]["cancelled"], [{"id": "syn-0019", "code": "SYN-GEN309"}])
+        self.assertIn("My reservation SYN-GEN309 is no longer in the official catalog.", prompt)
+
+    def test_unreserved_session_that_moved_is_not_a_moved_reservation(self):
+        """Codex T6 r1 P2: the attendee unreserved SYN-AI407 and it then moved: not 'My reservation ... moved'."""
+        self.brief(official(catalog.load_fixture()))
+        out, prompt = self.brief(modified_catalog(), reserved=["syn-k002", "syn-0019"])
+        self.assertEqual(out["catalog_diff"]["moved"], [])
+        self.assertNotIn("SYN-AI407 moved", prompt)
 
     def test_unchanged_catalog_reports_nothing_in_the_prompt(self):
         self.brief(official(catalog.load_fixture()))

@@ -131,11 +131,12 @@ def load_catalog_snapshot(name: str | None = None) -> dict[str, Any] | None:
     return json.loads(p.read_text(encoding="utf-8")) if p.is_file() else None
 
 
-def save_catalog_snapshot(sessions: list[dict], name: str | None = None) -> dict[str, Any]:
-    """Compact snapshot (code, times, room, venue, title+abstract digest per session id), written like save_state."""
+def save_catalog_snapshot(sessions: list[dict], reserved: list[str], name: str | None = None) -> dict[str, Any]:
+    """Compact snapshot (code, times, room, venue, title+abstract digest per session id) plus the reserved ids
+    at that time, so a later live visit can still name a cancelled reservation; written like save_state."""
     from datetime import datetime, timezone
 
-    snapshot = {"taken_at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "sessions": {
+    snapshot = {"taken_at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "reserved": list(reserved), "sessions": {
         s["id"]: {"code": s.get("code") or "", "start": s.get("start") or "", "end": s.get("end") or "",
                   "room": s.get("room") or "", "venue": s.get("venue") or "",
                   "hash": hashlib.sha256(f"{s.get('title') or ''}\n{s.get('abstract') or ''}".encode()).hexdigest()[:12]}
