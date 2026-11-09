@@ -1,6 +1,7 @@
 // Runs the real web/copilot.js against a minimal fake DOM (offline, no browser) and checks that
 // "Add these sessions to my Event Atlas plan" posts to /api/plan and tells Event Atlas to refresh
-// through the `atlas:plan-changed` window event, without reloading the page.
+// through the `atlas:plan-changed` window event, without reloading the page, both for a chat answer
+// and for the signed-in briefing when it carries a plan.
 // Usage: node tests/copilot_plan_event.mjs <path to web/copilot.js>   (prints a JSON report)
 import { readFileSync } from "node:fs";
 
@@ -38,7 +39,9 @@ globalThis.location = { reload: () => events.push("page-reload") };
 globalThis.fetch = async (url, init = {}) => {
   calls.push({ url, method: init.method || "GET", body: init.body ? JSON.parse(init.body) : null });
   const reply = {
-    "/api/my-schedule": { signed_in: false },
+    "/api/status": { signed_in: true, seconds_left: 3000 },
+    "/api/my-schedule": { signed_in: true, reserved: [], favorites: [] },
+    "/api/briefing": { text: "briefing", trace: [], suggested: [], plan: { plan: { chosen: [{ id: "syn-0002", code: "SYN-DAT210", title: "b", start: "", end: "" }] } } },
     "/api/chat": { text: "plan", trace: [], suggested: [], plan: { plan: { chosen: [{ id: "syn-0001", code: "SYN-AI101", title: "t", start: "", end: "" }] } } },
     "/api/plan": { version: 1, items: [], counts: { reserved: 0, favorite: 0, local: 1 }, changed: 1 },
   }[url];
@@ -46,16 +49,23 @@ globalThis.fetch = async (url, init = {}) => {
 };
 const settle = () => new Promise((r) => setTimeout(r, 20));
 
+const addButtons = () => created.filter((e) => e.textContent === "Add these sessions to my Event Atlas plan");
+async function clickAdd(button) {
+  events.length = 0; calls.length = 0;  // only what this click sends and fires
+  button.click();
+  await settle();
+  const post = calls.find((c) => c.url === "/api/plan" && c.method === "POST");
+  return { post: post?.body ?? null, events: [...events], message: created[created.indexOf(button) + 1]?.textContent };
+}
+
 new Function(readFileSync(process.argv[2], "utf8"))();
 await settle();
+const [briefingAdd] = addButtons();  // the signed-in briefing ran on load
+const briefing = briefingAdd ? await clickAdd(briefingAdd) : null;
 const form = created.find((e) => e.className === "nc-form");
 created.find((e) => e.tag === "textarea").value = "Plan my Monday";
 form.requestSubmit();
 await settle();
-const add = created.find((e) => e.textContent === "Add these sessions to my Event Atlas plan");
-add.click();
-await settle();
-const post = calls.find((c) => c.url === "/api/plan" && c.method === "POST");
-const message = add && created[created.indexOf(add) + 1]?.textContent;
+const chat = await clickAdd(addButtons().at(-1));
 const tabs = created.find((e) => e.className === "nc-tabs").children.map((b) => b.textContent);
-console.log(JSON.stringify({ post: post?.body ?? null, events, message, tabs }));
+console.log(JSON.stringify({ ...chat, tabs, briefing }));

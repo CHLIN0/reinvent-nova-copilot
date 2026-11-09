@@ -57,6 +57,10 @@
 
   // "My plan" (我的安排) lives on the server (/api/plan); Event Atlas re-reads it when told, no page reload.
   const planChanged = () => window.dispatchEvent(new Event("atlas:plan-changed"));
+  function planButton(p, box) {
+    const add = el("button", "nc-btn", "Add these sessions to my Event Atlas plan"); add.type = "button"; add.style.marginTop = "6px";
+    const msg = el("div", "nc-note"); add.addEventListener("click", () => addToAtlas((p.plan || {}).chosen || [], msg)); box.append(add, msg);
+  }
   async function addToAtlas(chosen, msg) {
     const ids = chosen.map(c => c.id).filter(id => typeof id === "string" && id);
     if (!ids.length) { msg.textContent = "No sessions to add."; return; }
@@ -110,6 +114,7 @@
       for (const box of [a, b].filter(Boolean)) {
         box.textContent = head + r.text; if (r.trace.length) box.append(traceBox(r.trace));
         if ((r.suggested || []).length) box.append(sessionCards(r.suggested));
+        if (r.plan) planButton(r.plan, box);
       }
     } catch (e) { for (const box of [a, b].filter(Boolean)) box.textContent = "Briefing unavailable: " + e.message; }
   }
@@ -121,8 +126,7 @@
       const r = await api("/api/chat", {message: text, allow_write: allow.checked});
       a.textContent = r.text; if (r.trace.length) a.append(traceBox(r.trace));
       if ((r.suggested || []).length) a.append(sessionCards(r.suggested));
-      if (r.plan) { const add = el("button", "nc-btn", "Add these sessions to my Event Atlas plan"); add.type = "button"; add.style.marginTop = "6px";
-        const msg = el("div", "nc-note"); add.addEventListener("click", () => addToAtlas((r.plan.plan || {}).chosen || [], msg)); a.append(add, msg); }
+      if (r.plan) planButton(r.plan, a);
     } catch (e) { a.textContent = "Error: " + e.message; a.classList.add("nc-err"); }
     allow.checked = false; sendBtn.disabled = false; log.scrollTop = log.scrollHeight;
   }
