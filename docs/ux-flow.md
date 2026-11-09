@@ -20,7 +20,7 @@ Written 2026-11-06 after the first end-to-end use with a real attendee account. 
 
 **Today:** done. Status bar reads `GetSchedule` and shows counts. Redirect uses the validated request origin.
 
-**Gap:** the service restarts drop the in-memory token (by design); a short "you were signed out because the app restarted" message would avoid confusion. Two login buttons exist (Atlas banner and Copilot); they call the same flow, but one is enough.
+**Gap:** the service restarts drop the in-memory token (by design); a short "you were signed out because the app restarted" message would avoid confusion. One login button remains (the Event Atlas header); the chat-only `/copilot` page and its second sign-in button were removed (T8).
 
 ## 2. First screen
 
