@@ -28,6 +28,7 @@ import {
   cancelResultText,
   cancelReservation,
 } from "./rsvp.mjs";
+import { serviceErrorText } from "./service-errors.mjs";
 import {
   homeDay,
   dayAgenda,
@@ -736,9 +737,10 @@ async function renderReader(r) {
         translation.source === "official"
           ? `官方翻譯 / Official translation · ${translation.lang}`
           : `非官方翻譯 / unofficial translation (Nova) · ${translation.lang}${translation.cached ? " · 快取 / cached" : ""}`;
-    } catch {
+    } catch (error) {
       if (token === readerVersion)
         transNote.textContent =
+          serviceErrorText(error.message) ||
           "翻譯暫時無法使用，請重試。 / Translation unavailable; please retry.";
     } finally {
       translateButton.disabled = false;

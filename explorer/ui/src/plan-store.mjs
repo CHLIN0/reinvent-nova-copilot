@@ -1,3 +1,5 @@
+import { serviceErrorText } from "./service-errors.mjs";
+
 const PLAN_ERROR = "暫時無法讀取「我的安排」；請稍後再試。";
 const FIELDS = [
   "placement",
@@ -53,7 +55,10 @@ export function createPlanStore({
       throw Error(PLAN_ERROR);
     }
     if (!response.ok)
-      throw Error(typeof data?.error === "string" ? data.error : PLAN_ERROR);
+      throw Error(
+      serviceErrorText(data?.error) ||
+        (typeof data?.error === "string" ? data.error : PLAN_ERROR),
+    );
     const items = validItems(data);
     store.official = data.official || null;
     return items;

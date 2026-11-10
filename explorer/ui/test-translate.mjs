@@ -48,6 +48,7 @@ function setup(fetch) {
     timeText: () => "09:00",
     observationLabel: () => "today",
     sourceTimingNote: () => "",
+    serviceErrorText: () => "",
   });
   const render = new vm.Script(`(${reader})`).runInContext(context);
   const record = (id) => ({

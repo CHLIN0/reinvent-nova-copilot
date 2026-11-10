@@ -1,3 +1,5 @@
+import { serviceErrorText } from "./service-errors.mjs";
+
 // Official reservation lifecycle on Atlas cards: button state, seat words, cancel call and its result in plain words.
 
 const SEATS = {
@@ -68,6 +70,9 @@ export async function cancelReservation(
     body: JSON.stringify({ session_ids: [sessionId] }),
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw Error(data.error || "取消未送出；官方行程保持原樣。");
+  if (!response.ok)
+    throw Error(
+      serviceErrorText(data.error) || data.error || "取消未送出；官方行程保持原樣。",
+    );
   return (data.results || [])[0] || { ok: false, code: "not_reported" };
 }
