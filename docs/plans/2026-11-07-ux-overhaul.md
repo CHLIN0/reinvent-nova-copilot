@@ -114,6 +114,7 @@ M0 first (T0+T1+T2 → T3+T4+T5+T10 → T6+T7+T8 → T9). The three spikes (M2a,
 
 ### T9 · Reliability gate
 - Offline scenario battery in CI; user-facing text for 401/403/429 and Bedrock unavailable; `unittest` green.
+- 2026-11-10, BR said start. Split into two parallel builders: T9a (`docs/briefs/T9a-answers-grounded-in-tools.md`, class C: force a tool call on the first request of every turn after a live Tuesday answer used no tools and gave GHJ212 a wrong time; one profile question chosen in code; combined questions) and T9b (`docs/briefs/T9b-errors-ledger-ci.md`, class D: tests isolated from the private cost ledger, plain-words errors, GitHub Actions CI, PR template). Test scope in `docs/test-matrix.md`. Blind review by a Claude Sonnet subagent started by each builder (Codex out of weekly quota until 11-12); the host pushes and opens PRs because this repo has no builder grant yet.
 
 ## 6. How the work runs
 
