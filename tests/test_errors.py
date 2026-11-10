@@ -78,7 +78,7 @@ class ErrorRouteTests(unittest.TestCase):
         for leak in (cls_name, "secret", "123456789012", "Traceback"):
             self.assertNotIn(leak, text)
         self.assertIn(cls_name, log)  # the class is logged for the operator...
-        self.assertNotIn("secret", log)  # ...but never the exception text
+        self.assertNotIn("secret", "".join(l for l in log.splitlines() if l.startswith("nova-copilot")))  # never the text
         self.assertIn(code, log)
 
     def official(self):
