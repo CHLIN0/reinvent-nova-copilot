@@ -1,0 +1,44 @@
+# Offline tests on synthetic data and mocked Bedrock only; no cloud credentials, no secrets.
+# Live/paid smoke tests stay local and are reported in the PR with the head SHA (docs/test-matrix.md).
+name: ci
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      AWS_EC2_METADATA_DISABLED: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Python unit tests (P1-P13, B1, B2, T9a rows)
+        run: python -m unittest discover -s tests
+      - name: Copilot panel tests (P14, B3)
+        run: |
+          node tests/copilot_status.mjs
+          node tests/copilot_errors.mjs
+      # N1 only: test-scene-data.mjs (N2) needs explorer/data/osm/, which is not in git.
+      - name: Event Atlas tests (N1)
+        working-directory: explorer/ui
+        run: >
+          node --test test-calendar-stack.mjs test-discovery.mjs test-model.mjs test-my-day.mjs
+          test-official-connection.mjs test-plan-store.mjs test-rsvp.mjs test-session-facets.mjs
+          test-stack-plan-marks.mjs test-translate.mjs
