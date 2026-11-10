@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -343,7 +344,9 @@ def _plan() -> dict:
             reserved, favorites = _schedule_ids(sched["reserved"]), _schedule_ids(sched["favorites"])
             official = {"status": "live", "read_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
         except Exception as e:  # local picks still show; report the code only
-            official = {"status": "error", "error": getattr(e, "code", type(e).__name__)}
+            code = _error_code(e) or "server_error"
+            _log_failure("plan official read", e, code)
+            official = {"status": "error", "error": code}
     items, seen = [], set()
     for source, rows in (("reserved", [(i, "") for i in reserved]), ("favorite", [(i, "") for i in favorites]),
                          ("local", [(x["session_id"], str(x.get("added_at") or "")) for x in _local_picks(profile.read_state())])):
@@ -387,6 +390,59 @@ def _change_plan(action, session_ids) -> dict:
 
     changed = profile.update_state(change)
     return {**_plan(), "changed": changed}
+
+
+# Failures the attendee can act on, as a short code and one plain sentence. Exception text never reaches the UI.
+_ERRORS = {
+    "signin_expired": (401, "Your AWS Events sign-in has expired. Sign in again from the top of the page."),
+    "forbidden": (403, "AWS Events refused this request for your account."),
+    "rate_limited": (429, "AWS Events is busy. Wait a minute and try again."),
+    "model_unavailable": (503, "Nova is unavailable right now. Your plan and the official schedule are unaffected; "
+                               "try again shortly."),
+    "server_error": (500, "Something went wrong on this computer's Nova Copilot service. "
+                          "Try again; if it repeats, restart it."),
+}
+_OFFICIAL_ERRORS = {"official_sign_in_required": "signin_expired", "official_event_access_required": "forbidden",
+                    "official_rate_limited": "rate_limited"}
+_HTTP_ERRORS = {401: "signin_expired", 403: "forbidden", 429: "rate_limited"}
+
+
+def _error_code(e: Exception) -> str | None:
+    """The _ERRORS code for a failure, or None when it is not one of the known kinds."""
+    from urllib.error import HTTPError
+
+    if isinstance(e, HTTPError):
+        return _HTTP_ERRORS.get(e.code)
+    if isinstance(e, catalog.CatalogError):
+        return _OFFICIAL_ERRORS.get(e.code)
+    if isinstance(e, official_auth.OAuthError):
+        return "signin_expired" if e.terminal or e.code == "sign_in_required" else None
+    if type(e).__module__.split(".")[0] == "botocore":  # Bedrock: ClientError, NoCredentialsError, connection errors
+        return "model_unavailable"
+    return None
+
+
+def _log_failure(route: str, e: Exception, code: str) -> None:
+    """Exception class and fixed public code only: never the message, token, credentials or request body."""
+    detail = getattr(e, "code", None)
+    if type(e).__module__.split(".")[0] == "botocore":
+        detail = ((getattr(e, "response", None) or {}).get("Error") or {}).get("Code")
+    detail = f" ({detail})" if isinstance(detail, (str, int)) and str(detail).replace("_", "").isalnum() else ""
+    print(f"nova-copilot {route}: {type(e).__name__}{detail} -> {code}", file=sys.stderr, flush=True)
+
+
+# Official outcomes that already read well keep their own code and fixed sentence (atlas.catalog._MESSAGES).
+_KEPT_OFFICIAL = {"official_event_not_found": 404, "official_operation_closed": 409}
+
+
+def _failure(route: str, e: Exception) -> tuple[int, dict]:
+    if isinstance(e, catalog.CatalogError) and e.code in _KEPT_OFFICIAL:
+        _log_failure(route, e, e.code)
+        return _KEPT_OFFICIAL[e.code], {"error": e.code, "message": catalog._MESSAGES[e.code]}
+    code = _error_code(e) or "server_error"
+    _log_failure(route, e, code)
+    status, message = _ERRORS[code]
+    return status, {"error": code, "message": message}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -459,7 +515,10 @@ class Handler(BaseHTTPRequestHandler):
             except translate.TranslationError as e:
                 return self._json(404 if e.code == "session_not_found" else 502, {"error": e.code})
             except Exception as e:  # Never expose Bedrock errors or credential details.
-                return self._json(502, {"error": getattr(e, "code", "translation_unavailable")})
+                if _error_code(e):
+                    return self._json(*_failure("translate", e))
+                _log_failure("translate", e, "translation_unavailable")
+                return self._json(502, {"error": "translation_unavailable"})
         if path_only in ("/", "/index.html"):
             if not (_state.get("explorer_port") and (EXPLORER_DIST / "index.html").is_file()):
                 return self._send(503, b"Event Atlas is not built. Build it with: cd explorer/ui && node build.mjs\n",
@@ -479,14 +538,15 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 return self._json(200, _my_schedule())
             except Exception as e:
-                return self._json(502, {"signed_in": official_auth.is_signed_in(), "error": getattr(e, "code", type(e).__name__)})
+                status, body = _failure("my-schedule", e)
+                return self._json(status, {"signed_in": official_auth.is_signed_in(), **body})
         if self.path == "/api/profile":
             return self._json(200, {**profile.load_profile(), "fields_help": profile.FIELDS})
         if path_only == "/api/plan":
             try:
                 return self._json(200, _plan())
             except Exception as e:
-                return self._json(500, {"error": getattr(e, "code", type(e).__name__)})
+                return self._json(*_failure("plan", e))
         return self._json(404, {"error": "not found"})
 
     def do_POST(self):
@@ -531,7 +591,7 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError as e:
             return self._json(400, {"error": str(e)})
         except Exception as e:
-            return self._json(500, {"error": f"{type(e).__name__}: {e}"})
+            return self._json(*_failure(self.path.split("?", 1)[0].removeprefix("/api/"), e))
         return self._json(404, {"error": "not found"})
 
 
