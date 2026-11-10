@@ -45,7 +45,7 @@ TOOL_SPECS: list[dict[str, Any]] = [
     },
     {
         "name": "route_between",
-        "description": "Estimate door-to-door travel between two venues: minutes, walking steps and legs (walk, shuttle, monorail, rideshare). It answers only the travel part of a question: when the attendee also asks for a plan of the day, call plan_itinerary as well.",
+        "description": "Estimate door-to-door travel between two venues: minutes, walking steps and legs (walk, shuttle, monorail, rideshare).",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -68,7 +68,7 @@ TOOL_SPECS: list[dict[str, Any]] = [
     },
     {
         "name": "plan_itinerary",
-        "description": "Pick the best feasible set of sessions from candidates, keeping must-attend ones, and explain what was dropped and why. Pass candidate_ids from search results, or a query to search for candidates. It does not check travel from a place that is not a session in the plan; when the attendee also asks whether they can get somewhere in time, call route_between as well.",
+        "description": "Pick the best feasible set of sessions from candidates, keeping must-attend ones, and explain what was dropped and why. Pass candidate_ids from search results, or a query to search for candidates.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -346,14 +346,14 @@ def _call(name: str, args: dict, be: Backend) -> Any:
         return _with_lock(out, lock)
     if name == "get_profile":
         from atlas import profile
-        return _next_missing(profile.load_profile())
+        return profile.load_profile()
     if name == "update_profile":
         from atlas import profile
         updates = args.get("updates")
         if not isinstance(updates, dict) or not updates:
             raise ToolError("updates must be a non-empty object of profile fields.")
         try:
-            return _next_missing(profile.update_profile(updates))
+            return profile.update_profile(updates)
         except ValueError as e:
             raise ToolError(str(e)) from e
     if name == "get_my_schedule":
@@ -375,13 +375,6 @@ def _call(name: str, args: dict, be: Backend) -> Any:
 
 
 FAVORITE_PRIORITY = 2  # official favorites outrank plain candidates (default priority 1)
-
-
-def _next_missing(out: dict) -> dict:
-    """At most the one planning detail worth asking next: with every empty field listed, Nova read them all back (T9a live)."""
-    from atlas import profile
-
-    return {**out, "missing": [f for f in profile.PLANNING_PRIORITY if f in out["missing"]][:1]}
 
 
 def _schedule_ids(items: Any) -> list[str]:

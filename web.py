@@ -212,21 +212,12 @@ def _briefing() -> dict:
         if r.get("start"):
             by_day.setdefault(r["start"][:10], []).append(r["id"])
     checks = "; ".join(f"{day}: {json.dumps(ids)}" for day, ids in sorted(by_day.items()))
-    # At most one profile question, chosen here: the first planning detail still missing, in profile.PLANNING_PRIORITY order.
-    saved = profile.load_profile()["fields"]
-    words = {"hotel": "my hotel", "max_steps_per_day": "my daily walking limit", "arrival": "my arrival date",
-             "departure": "my departure date", "interests": "the topics I am interested in", "role": "my job role",
-             "experience_level": "my experience level", "transport": "how I prefer to get around"}
-    gap = next((f for f in profile.PLANNING_PRIORITY if f not in saved), None)
-    both_dates = gap == "arrival" and "departure" not in saved
-    ask = "my arrival and departure dates" if both_dates else words.get(gap)
     facts = ([f"The complete list of sessions new in the official catalog since my last visit that match my profile: "
               + "; ".join(f'{s["code"]} "{s["title"]}" ({_when(s)}, {s.get("venue_name") or s.get("venue")})' for s in recommended) + ". "]
              if recommended else []) \
         + [f"My reservation {m['code']} moved from {_when(m['from'])}, {m['from']['room']}, {m['from']['venue']} "
            f"to {_when(m['to'])}, {m['to']['room']}, {m['to']['venue']}. " for m in (changes or {}).get("moved", [])] \
-        + [f"My reservation {c['code']} is no longer in the official catalog. " for c in (changes or {}).get("cancelled", [])] \
-        + [f"My profile does not yet say {ask}. " if ask else "My profile has what you need for planning. "]
+        + [f"My reservation {c['code']} is no longer in the official catalog. " for c in (changes or {}).get("cancelled", [])]
     prompt = ("Brief me as I open the app (this is not a new question). Call get_profile and get_my_schedule. "
               + ("This is my first visit. " if first_visit else f"Since my last visit my official schedule changed: {json.dumps(diff)}. " if diff else "")
               + "".join(facts)
@@ -238,8 +229,7 @@ def _briefing() -> dict:
               "2) recommend what to do next ("
               + ("the new sessions above, " if recommended else "")
               + "sessions to add on days with gaps, or what to fix), "
-              + ("3) ask me for that one missing profile detail in one short line, and ask nothing else about my profile."
-                 if ask else "3) ask me nothing about my profile."))
+              "3) if my profile is missing my hotel or walking limit, ask for it in one line.")
     out = _chat(prompt, allow_write=False, feature="briefing")
     out["text"], out["removed"] = guard.strip_unverified_feasibility(out["text"], out["trace"])
     out["schedule_diff"] = diff
