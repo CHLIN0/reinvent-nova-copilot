@@ -346,7 +346,10 @@ def _call(name: str, args: dict, be: Backend) -> Any:
         return _with_lock(out, lock)
     if name == "get_profile":
         from atlas import profile
-        return profile.load_profile()
+        out = profile.load_profile()
+        # At most the one planning detail worth asking next: with every empty field listed, Nova read them all back.
+        out["missing"] = [f for f in profile.PLANNING_PRIORITY if f in out["missing"]][:1]
+        return out
     if name == "update_profile":
         from atlas import profile
         updates = args.get("updates")

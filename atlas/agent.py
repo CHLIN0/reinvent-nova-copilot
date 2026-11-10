@@ -4,7 +4,8 @@ Env: NOVA_MODEL_ID (default us.amazon.nova-pro-v1:0), AWS_REGION (default
 us-east-1), AWS_PROFILE (optional, standard boto3 credential chain otherwise).
 Write tools (add_favorites) run only if the `confirm` callback returns True.
 The first request of every user turn sets toolChoice "any", so each answer reads the data through at
-least one tool; later rounds of the turn use the default ("auto") so the model can finish.
+least one read tool; later rounds of the turn offer every tool with the default ("auto") so the model
+can finish or, if asked, write.
 """
 from __future__ import annotations
 
@@ -53,6 +54,12 @@ def make_client(region: str | None = None, profile: str | None = None):
     return session.client("bedrock-runtime", region_name=region or os.environ.get("AWS_REGION") or "us-east-1")
 
 
+def _forced(config: dict) -> dict:
+    """The forced request offers read tools only: a turn never starts with a write (live: "thanks" picked add_favorites)."""
+    reads = [t for t in config["tools"] if t["toolSpec"]["name"] not in WRITE_TOOLS]
+    return {**config, "tools": reads, "toolChoice": FORCE_TOOL}
+
+
 def _text_of(content: list[dict]) -> str:
     text = "".join(b.get("text", "") for b in content if "text" in b)
     return _THINKING.sub("", text).strip()
@@ -88,7 +95,7 @@ class Agent:
                 modelId=self.model_id,
                 system=[{"text": self.system_prompt}],
                 messages=messages,
-                toolConfig={**cfg, "toolChoice": FORCE_TOOL} if force_tool else cfg,
+                toolConfig=_forced(cfg) if force_tool else cfg,
                 inferenceConfig=INFERENCE_CONFIG,
             )
 

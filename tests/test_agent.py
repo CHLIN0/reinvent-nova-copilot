@@ -193,9 +193,20 @@ class AgentLoopTest(unittest.TestCase):
                             tool_use("get_session", {"session_id": "AIM301"}, "b"), final("Go to AIM301.")])
         Agent(client=fake, backend=self.be).ask("agent workshops?")
         self.assertEqual(fake.requests[0]["toolConfig"]["toolChoice"], {"any": {}})
-        self.assertEqual(fake.requests[0]["toolConfig"]["tools"], tools.bedrock_tool_config()["tools"])
+        every = tools.bedrock_tool_config()["tools"]
+        self.assertEqual(fake.requests[0]["toolConfig"]["tools"], [t for t in every if t["toolSpec"]["name"] != "add_favorites"])
         for req in fake.requests[1:]:
             self.assertNotIn("toolChoice", req["toolConfig"])
+            self.assertEqual(req["toolConfig"]["tools"], every)
+
+    def test_a_save_request_writes_only_in_a_later_auto_round(self):
+        fake = FakeBedrock([tool_use("get_session", {"session_id": "AIM301"}, "a"),
+                            tool_use("add_favorites", {"session_ids": ["s-1"]}, "b"), final("Saved AIM301.")])
+        res = Agent(client=fake, backend=self.be, confirm=lambda n, a: True).ask("save AIM301")
+        self.assertEqual([c.name for c in res.trace], ["get_session", "add_favorites"])
+        names = [[t["toolSpec"]["name"] for t in r["toolConfig"]["tools"]] for r in fake.requests]
+        self.assertNotIn("add_favorites", names[0])
+        self.assertIn("add_favorites", names[1])
 
     def test_budget_final_request_is_not_forced(self):
         fake = FakeBedrock([tool_use("search_sessions", {"query": str(i)}, f"t{i}") for i in range(2)] + [final("Best effort.")])

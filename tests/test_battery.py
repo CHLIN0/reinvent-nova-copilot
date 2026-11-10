@@ -329,6 +329,17 @@ class Battery(Base):
         self.assertIn("My profile has what you need for planning. ", prompt)
         self.assertIn("3) ask me nothing about my profile.", prompt)
 
+    def test_get_profile_tool_names_one_missing_planning_item(self):
+        """Live: "thanks" (forced to call a tool) called get_profile and Nova read back every empty field."""
+        out, ok = tools.dispatch("get_profile", {}, self.be)
+        self.assertTrue(ok)
+        self.assertEqual(out["missing"], ["hotel"])
+        profile.update_profile({"hotel": "Wynn"})
+        self.assertEqual(tools.dispatch("get_profile", {}, self.be)[0]["missing"], ["max_steps_per_day"])
+        profile.update_profile(self.PLANNING)
+        self.assertEqual(tools.dispatch("get_profile", {}, self.be)[0]["missing"], [])
+        self.assertIn("diet", profile.load_profile()["missing"])  # the profile API still lists every empty field
+
     # T9a (matrix A4): a two-part question, travel feasibility plus a plan of the day ---------------
     def test_travel_and_plan_the_day(self):
         q = "I'm at the Wynn after SYN-AI407. Can I reach SYN-GEN101 at Caesars Forum by 12:00 if I leave at 11:30, and plan the rest of my Wednesday?"
