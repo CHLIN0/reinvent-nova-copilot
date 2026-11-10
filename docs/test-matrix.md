@@ -37,6 +37,9 @@ Offline rows use the synthetic fixture catalog and a mocked Bedrock client; they
 | B2 | 401/expired, 403, 429, Bedrock unavailable and unknown errors map to a code and one plain sentence; no exception text reaches the response | unit | T9b adds | mocked failures through the HTTP handler | yes | |
 | B3 | The panel shows the error sentence | unit | T9b adds, node test on `web/copilot.js` | fake DOM | yes | |
 | B4 | CI runs P1–P14, N1 and the T9 rows on every PR and push to `main` | CI | `.github/workflows/ci.yml` (T9b) | none | yes | no credentials |
+| C1 | A user turn that names a conference weekday (Monday…Friday, Mon…Fri, 週一…週五, 周一…周五, 星期一…星期五, 禮拜一…禮拜五) carries one fact line such as "Tuesday = 2026-12-01 (Las Vegas)"; no fact line when no weekday is named | unit | T9c adds, `tests/test_weekday.py` (`DayFactsTest`), `tests/test_battery.py` | mocked Bedrock | yes | facts only, no rule about tool arguments |
+| C2 | `search_sessions`, `plan_itinerary` and `check_itinerary` results name the day as `day` (ISO) plus `weekday` (one day) or a `days` list | unit | T9c adds, `tests/test_weekday.py` (`ToolWeekdayTest`) | synthetic catalog | yes | |
+| C3 | When the attendee named exactly one weekday and no successful latest `plan_itinerary` covers that date, one sentence naming the planned and the asked-for day is appended (English or Chinese); nothing when the plan is on the named day | unit | T9c adds, `tests/test_battery.py` (`test_tuesday_planned_*`, `test_zh_tuesday_*`), `tests/test_weekday.py` (`MismatchTest`) | scripted tool calls | yes | append only; the host's live check repeats L2 |
 
 ## Live rows (not in CI)
 

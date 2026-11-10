@@ -293,7 +293,7 @@ def _chat(message: str, allow_write: bool, feature: str = "chat") -> dict:
         if call.name == "plan_itinerary" and call.ok:
             plan = call.result
     return {
-        "text": answer_format.format_answer(res.text, res.trace),
+        "text": answer_format.format_answer(res.text, res.trace, message),
         "rounds": res.rounds,
         "trace": [{"name": c.name, "input": c.input, "ok": c.ok, "confirmed": c.confirmed, "result": _short(c.result)}
                   for c in res.trace],

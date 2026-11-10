@@ -3,7 +3,8 @@
 A safety net behind the prompt's response rules that never deletes model text: strip Markdown
 symbols, append the plain "no additional session fits" sentence when the planner kept only the
 reservations, and shorten a sentence that lists more than three dropped sessions to
-"N dropped (3 shown: ...)". Length is the prompt's job. Trace items are ToolCall objects or dicts.
+"N dropped (3 shown: ...)", and append a note when the plan's day is not the weekday the attendee
+named. Length is the prompt's job. Trace items are ToolCall objects or dicts.
 """
 from __future__ import annotations
 
@@ -159,7 +160,37 @@ def collapse_dropped(text: str, trace: list) -> str:
     return "".join(out)
 
 
-def format_answer(text: str, trace: list | None = None) -> str:
+DAY_MISMATCH = "Note: this plan is for {planned}, but you asked for {asked}."
+DAY_MISMATCH_ZH = "注意：這份安排排的是{planned}，你問的是{asked}。"
+
+
+def _day_label(iso: str, cjk: bool) -> str:
+    i = date.fromisoformat(iso).weekday()
+    return f"{_WEEKDAY_ZH[i]}（{iso}）" if cjk else f"{_WEEKDAY[i]} {iso}"
+
+
+def add_day_mismatch(text: str, trace: list, question: str) -> str:
+    """When the attendee named exactly one conference weekday and no latest plan covers that date,
+    append one sentence naming the planned day(s) and the asked-for day. Nothing in the text is removed."""
+    from atlas.tools import named_days
+
+    asked = named_days(question)
+    planned: set[str] = set()
+    for result, _ in _latest_plans(trace):
+        rows = result.get("days") if isinstance(result.get("days"), list) else [result]
+        planned |= {r["day"] for r in rows if isinstance(r, dict) and isinstance(r.get("day"), str) and r.get("weekday")}
+    if not text or len(asked) != 1 or not planned or asked[0] in planned:
+        return text
+    cjk = _is_cjk(text)
+    sentence = (DAY_MISMATCH_ZH if cjk else DAY_MISMATCH).format(
+        planned=("、" if cjk else " and ").join(_day_label(d, cjk) for d in sorted(planned)),
+        asked=_day_label(asked[0], cjk))
+    return text if sentence in text else f"{text}\n{sentence}"
+
+
+def format_answer(text: str, trace: list | None = None, question: str = "") -> str:
     """All panel rules in order. Idempotent; removes nothing from the model's text but Markdown symbols."""
     trace = trace or []
-    return add_no_addition(collapse_dropped(strip_markdown(text), trace), trace) if text else text
+    if not text:
+        return text
+    return add_day_mismatch(add_no_addition(collapse_dropped(strip_markdown(text), trace), trace), trace, question)

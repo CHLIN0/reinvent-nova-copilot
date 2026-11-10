@@ -36,7 +36,7 @@ def run_one(agent: Agent, q: str, trace: bool) -> None:
     from atlas.format import format_answer
 
     res = agent.ask(q)
-    print(format_answer(res.text, res.trace))
+    print(format_answer(res.text, res.trace, q))
     if trace:
         print_trace(res)
 
