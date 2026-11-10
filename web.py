@@ -211,18 +211,14 @@ def _briefing() -> dict:
         if r.get("start"):
             by_day.setdefault(r["start"][:10], []).append(r["id"])
     checks = "; ".join(f"{day}: {json.dumps(ids)}" for day, ids in sorted(by_day.items()))
-    # At most one profile question, chosen here: the first planning detail still missing, in this order.
+    # At most one profile question, chosen here: the first planning detail still missing, in profile.PLANNING_PRIORITY order.
     saved = profile.load_profile()["fields"]
-    dates = [f for f in ("arrival", "departure") if f not in saved]
-    ask = next((words for gap, words in (
-        ("hotel" not in saved, "my hotel"),
-        ("max_steps_per_day" not in saved, "my daily walking limit"),
-        (bool(dates), "my arrival and departure dates" if len(dates) == 2 else f"my {dates[0]} date" if dates else ""),
-        ("interests" not in saved, "the topics I am interested in"),
-        ("role" not in saved, "my job role"),
-        ("experience_level" not in saved, "my experience level"),
-        ("transport" not in saved, "how I prefer to get around"),
-    ) if gap), None)
+    words = {"hotel": "my hotel", "max_steps_per_day": "my daily walking limit", "arrival": "my arrival date",
+             "departure": "my departure date", "interests": "the topics I am interested in", "role": "my job role",
+             "experience_level": "my experience level", "transport": "how I prefer to get around"}
+    gap = next((f for f in profile.PLANNING_PRIORITY if f not in saved), None)
+    both_dates = gap == "arrival" and "departure" not in saved
+    ask = "my arrival and departure dates" if both_dates else words.get(gap)
     facts = ([f"The complete list of sessions new in the official catalog since my last visit that match my profile: "
               + "; ".join(f'{s["code"]} "{s["title"]}" ({_when(s)}, {s.get("venue_name") or s.get("venue")})' for s in recommended) + ". "]
              if recommended else []) \
