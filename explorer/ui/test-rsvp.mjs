@@ -103,3 +103,13 @@ test("cancelReservation posts one session id to the click-only route", async () 
     /Not signed in/,
   );
 });
+
+test("cancel shows the sign-in sentence for an expired sign-in", async () => {
+  const fetch = async () => ({
+    ok: false,
+    json: async () => ({ error: "signin_expired", message: "Your AWS Events sign-in has expired." }),
+  });
+  await assert.rejects(cancelReservation("s-1", { fetch }), {
+    message: "登入已過期，請從頁面上方重新登入。",
+  });
+});

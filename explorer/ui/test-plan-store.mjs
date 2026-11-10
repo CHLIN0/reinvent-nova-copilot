@@ -128,3 +128,13 @@ test("a slower, older plan read never overwrites a newer one", async () => {
   await Promise.all([first, second]);
   assert.deepEqual(applied, [["new"]]);
 });
+
+test("a server error code becomes the plain sentence", async () => {
+  const fetch = async () => ({
+    ok: false,
+    json: async () => ({ error: "model_unavailable", message: "Nova is unavailable right now." }),
+  });
+  await assert.rejects(createPlanStore({ fetch }).load(), {
+    message: "Nova 暫時無法使用；你的安排與官方行程不受影響，請稍後再試。",
+  });
+});

@@ -15,7 +15,9 @@ from threading import Lock
 from atlas import pricing
 
 ROOT = Path(__file__).resolve().parent.parent
-LEDGER_PATH = ROOT / "local-private" / "costs.jsonl"
+DEFAULT_LEDGER_PATH = ROOT / "local-private" / "costs.jsonl"
+# ATLAS_COSTS_LEDGER redirects the ledger (the offline tests point it at a temporary file).
+LEDGER_PATH = Path(os.environ["ATLAS_COSTS_LEDGER"]) if os.environ.get("ATLAS_COSTS_LEDGER") else DEFAULT_LEDGER_PATH
 REPORT_PATH = ROOT / "docs" / "costs.md"
 _write_lock = Lock()
 
