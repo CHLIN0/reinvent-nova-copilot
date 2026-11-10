@@ -3,7 +3,7 @@
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
   const api = async (path, body) => {
     const r = await fetch(path, body === undefined ? {cache: "no-store"} : {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
-    const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status); return j;
+    const j = await r.json(); if (!r.ok) throw Object.assign(new Error(j.message || j.error || r.status), {code: j.error}); return j;
   };
   const hhmm = iso => (iso || "").slice(11, 16);
   let signedIn = false;
