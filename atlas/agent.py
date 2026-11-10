@@ -3,6 +3,8 @@
 Env: NOVA_MODEL_ID (default us.amazon.nova-pro-v1:0), AWS_REGION (default
 us-east-1), AWS_PROFILE (optional, standard boto3 credential chain otherwise).
 Write tools (add_favorites) run only if the `confirm` callback returns True.
+The first request of every user turn sets toolChoice "any", so each answer reads the data through at
+least one tool; later rounds of the turn use the default ("auto") so the model can finish.
 """
 from __future__ import annotations
 
@@ -19,6 +21,8 @@ from atlas.tools import WRITE_TOOLS, Backend, bedrock_tool_config, dispatch
 DEFAULT_MODEL_ID = "us.amazon.nova-pro-v1:0"
 MAX_TOOL_ROUNDS = 6
 INFERENCE_CONFIG = {"temperature": 0.3, "topP": 0.9, "maxTokens": 2000}
+# Bedrock Converse ToolChoice: "any" = the model must request at least one tool.
+FORCE_TOOL = {"any": {}}
 
 ConfirmFn = Callable[[str, dict], bool]
 _THINKING = re.compile(r"<thinking>.*?</thinking>", re.S)
@@ -74,18 +78,22 @@ class Agent:
         self.feature = feature
         self.history: list[dict] = []
 
-    def _converse(self, messages: list[dict], rounds: int = 0) -> dict:
+    def _converse(self, messages: list[dict], rounds: int = 0, force_tool: bool = False) -> dict:
         if self.client is None:
             self.client = make_client()
         config = bedrock_tool_config()
-        try:
-            response = self.client.converse(
+
+        def request(cfg: dict) -> dict:
+            return self.client.converse(
                 modelId=self.model_id,
                 system=[{"text": self.system_prompt}],
                 messages=messages,
-                toolConfig=config,
+                toolConfig={**cfg, "toolChoice": FORCE_TOOL} if force_tool else cfg,
                 inferenceConfig=INFERENCE_CONFIG,
             )
+
+        try:
+            response = request(config)
         except Exception as e:
             # If the official MCP tool specs are what Bedrock rejected, drop them and retry once with our own tools.
             from atlas.tools import OFFICIAL_PREFIX, disable_official_tools
@@ -94,13 +102,7 @@ class Agent:
                     t["toolSpec"]["name"].startswith(OFFICIAL_PREFIX) for t in config["tools"]):
                 raise
             disable_official_tools()
-            response = self.client.converse(
-                modelId=self.model_id,
-                system=[{"text": self.system_prompt}],
-                messages=messages,
-                toolConfig=bedrock_tool_config(),
-                inferenceConfig=INFERENCE_CONFIG,
-            )
+            response = request(bedrock_tool_config())
         append_usage(self.model_id, self.feature, response.get("usage") or {}, rounds)
         return response
 
@@ -131,7 +133,7 @@ class Agent:
         trace: list[ToolCall] = []
         rounds = 0
         while True:
-            resp = self._converse(messages, rounds)
+            resp = self._converse(messages, rounds, force_tool=rounds == 0)
             msg = resp["output"]["message"]
             messages.append(msg)
             stop = resp.get("stopReason", "")

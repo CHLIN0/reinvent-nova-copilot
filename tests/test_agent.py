@@ -187,6 +187,52 @@ class AgentLoopTest(unittest.TestCase):
         agent.ask("two")
         self.assertEqual(len(fake.requests[1]["messages"]), 3)
 
+    # T9a (matrix A1, A2): every answer reads the data through a tool -----------------------------
+    def test_first_request_of_a_turn_forces_a_tool_later_rounds_are_auto(self):
+        fake = FakeBedrock([tool_use("search_sessions", {"query": "agents"}, "a"),
+                            tool_use("get_session", {"session_id": "AIM301"}, "b"), final("Go to AIM301.")])
+        Agent(client=fake, backend=self.be).ask("agent workshops?")
+        self.assertEqual(fake.requests[0]["toolConfig"]["toolChoice"], {"any": {}})
+        self.assertEqual(fake.requests[0]["toolConfig"]["tools"], tools.bedrock_tool_config()["tools"])
+        for req in fake.requests[1:]:
+            self.assertNotIn("toolChoice", req["toolConfig"])
+
+    def test_budget_final_request_is_not_forced(self):
+        fake = FakeBedrock([tool_use("search_sessions", {"query": str(i)}, f"t{i}") for i in range(2)] + [final("Best effort.")])
+        res = Agent(client=fake, backend=self.be, max_rounds=1).ask("loop")
+        self.assertEqual(res.text, "Best effort.")
+        self.assertIn("toolChoice", fake.requests[0]["toolConfig"])
+        self.assertEqual([("toolChoice" in r["toolConfig"]) for r in fake.requests], [True, False, False])
+
+    def test_follow_up_turn_is_forced_again(self):
+        fake = FakeBedrock([tool_use("search_sessions", {"query": "agents"}, "a"), final("AIM301."),
+                            tool_use("get_profile", {}, "b"), final("You're welcome.")])
+        agent = Agent(client=fake, backend=self.be)
+        agent.ask("agent workshops?")
+        res = agent.ask("thanks")
+        self.assertEqual([c.name for c in res.trace], ["get_profile"])
+        self.assertEqual([r["toolConfig"].get("toolChoice") for r in fake.requests], [{"any": {}}, None, {"any": {}}, None])
+        self.assertEqual(len(fake.requests[2]["messages"]), 5)  # the follow-up carries the first turn's history
+
+    def test_official_tools_fallback_keeps_the_forced_choice(self):
+        class Rejecting(FakeBedrock):
+            def converse(self, **kw):
+                if not self.requests:
+                    self.requests.append(json.loads(json.dumps(kw)))
+                    raise RuntimeError("ValidationException: bad tool schema")
+                return super().converse(**kw)
+
+        official = {"name": "get_event", "description": "x", "inputSchema": {"type": "object", "properties": {}}}
+        fake = Rejecting([tool_use("get_profile", {}, "a"), final("Done.")])
+        with mock.patch.dict(tools._official_cache, {"tools": [official]}):
+            Agent(client=fake, backend=self.be).ask("hi")
+        names = [t["toolSpec"]["name"] for t in fake.requests[1]["toolConfig"]["tools"]]
+        self.assertIn("aws_events__get_event", [t["toolSpec"]["name"] for t in fake.requests[0]["toolConfig"]["tools"]])
+        self.assertNotIn("aws_events__get_event", names)  # the retry dropped the official tools
+        self.assertEqual(fake.requests[0]["toolConfig"]["toolChoice"], {"any": {}})
+        self.assertEqual(fake.requests[1]["toolConfig"]["toolChoice"], {"any": {}})
+        self.assertNotIn("toolChoice", fake.requests[2]["toolConfig"])
+
 
 class McpServerTest(unittest.TestCase):
     def test_lists_same_tools_and_gates_write(self):

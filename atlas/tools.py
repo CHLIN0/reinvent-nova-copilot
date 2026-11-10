@@ -45,7 +45,7 @@ TOOL_SPECS: list[dict[str, Any]] = [
     },
     {
         "name": "route_between",
-        "description": "Estimate door-to-door travel between two venues: minutes, walking steps and legs (walk, shuttle, monorail, rideshare).",
+        "description": "Estimate door-to-door travel between two venues: minutes, walking steps and legs (walk, shuttle, monorail, rideshare). It answers only the travel part of a question: when the attendee also asks for a plan of the day, call plan_itinerary as well.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -68,7 +68,7 @@ TOOL_SPECS: list[dict[str, Any]] = [
     },
     {
         "name": "plan_itinerary",
-        "description": "Pick the best feasible set of sessions from candidates, keeping must-attend ones, and explain what was dropped and why. Pass candidate_ids from search results, or a query to search for candidates.",
+        "description": "Pick the best feasible set of sessions from candidates, keeping must-attend ones, and explain what was dropped and why. Pass candidate_ids from search results, or a query to search for candidates. It does not check travel from a place that is not a session in the plan; when the attendee also asks whether they can get somewhere in time, call route_between as well.",
         "input_schema": {
             "type": "object",
             "properties": {
