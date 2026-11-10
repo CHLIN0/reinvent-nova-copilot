@@ -43,5 +43,5 @@ Offline rows use the synthetic fixture catalog and a mocked Bedrock client; they
 | Row | Behaviour | Level | How | Data | Runs in CI? | Notes |
 |---|---|---|---|---|---|---|
 | L1 | Day-plan question, session-by-code question and "thanks" each show at least one tool call; the plan uses official times | live smoke | builder's own instance, signed out, synthetic catalog | real Nova Pro (costs money) | no | T9a, report head SHA |
-| L2 | On BR's account: 「我住 Park MGM，每天最多走 8000 步，幫我排週二的議程。」 calls tools and gives GHJ212 as 12:00–14:00; the briefing asks at most one profile question | live | host, BR's Chrome on 127.0.0.1:8500 | BR's official account | no | host before merge |
+| L2 | On BR's account: 「我住 Park MGM，每天最多走 8000 步，幫我排週二的議程。」 calls tools and gives GHJ212 as 12:00–14:00; the briefing asks at most one profile question | live | host, BR's Chrome on 127.0.0.1:8500 | BR's official account | no | 2026-11-11: briefing pass; Tuesday planned on 2026-12-02 (fail, T9c) |
 | L3 | Real reserve then cancel with read-back | live | host, on BR's go only | BR's official account | no | passed 2026-11-09 (T7) |
