@@ -334,7 +334,9 @@ class Battery(Base):
         out, ok = tools.dispatch("get_profile", {}, self.be)
         self.assertTrue(ok)
         self.assertEqual(out["missing"], ["hotel"])
-        profile.update_profile({"hotel": "Wynn"})
+        saved, ok = tools.dispatch("update_profile", {"updates": {"hotel": "Wynn"}}, self.be)
+        self.assertTrue(ok, saved)
+        self.assertEqual(saved["missing"], ["max_steps_per_day"])  # live: the save result was read back in full too
         self.assertEqual(tools.dispatch("get_profile", {}, self.be)[0]["missing"], ["max_steps_per_day"])
         profile.update_profile(self.PLANNING)
         self.assertEqual(tools.dispatch("get_profile", {}, self.be)[0]["missing"], [])

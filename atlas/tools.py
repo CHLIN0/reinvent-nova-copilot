@@ -346,17 +346,14 @@ def _call(name: str, args: dict, be: Backend) -> Any:
         return _with_lock(out, lock)
     if name == "get_profile":
         from atlas import profile
-        out = profile.load_profile()
-        # At most the one planning detail worth asking next: with every empty field listed, Nova read them all back.
-        out["missing"] = [f for f in profile.PLANNING_PRIORITY if f in out["missing"]][:1]
-        return out
+        return _next_missing(profile.load_profile())
     if name == "update_profile":
         from atlas import profile
         updates = args.get("updates")
         if not isinstance(updates, dict) or not updates:
             raise ToolError("updates must be a non-empty object of profile fields.")
         try:
-            return profile.update_profile(updates)
+            return _next_missing(profile.update_profile(updates))
         except ValueError as e:
             raise ToolError(str(e)) from e
     if name == "get_my_schedule":
@@ -378,6 +375,13 @@ def _call(name: str, args: dict, be: Backend) -> Any:
 
 
 FAVORITE_PRIORITY = 2  # official favorites outrank plain candidates (default priority 1)
+
+
+def _next_missing(out: dict) -> dict:
+    """At most the one planning detail worth asking next: with every empty field listed, Nova read them all back (T9a live)."""
+    from atlas import profile
+
+    return {**out, "missing": [f for f in profile.PLANNING_PRIORITY if f in out["missing"]][:1]}
 
 
 def _schedule_ids(items: Any) -> list[str]:
