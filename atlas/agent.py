@@ -54,9 +54,14 @@ def make_client(region: str | None = None, profile: str | None = None):
     return session.client("bedrock-runtime", region_name=region or os.environ.get("AWS_REGION") or "us-east-1")
 
 
+# Tools that change something. The forced request leaves them out: live, "thanks" forced to call a tool
+# picked add_favorites once and saved invented interests with update_profile once.
+CHANGING_TOOLS = WRITE_TOOLS | {"update_profile"}
+
+
 def _forced(config: dict) -> dict:
-    """The forced request offers read tools only: a turn never starts with a write (live: "thanks" picked add_favorites)."""
-    reads = [t for t in config["tools"] if t["toolSpec"]["name"] not in WRITE_TOOLS]
+    """The forced request offers read tools only, so a turn never starts with a change."""
+    reads = [t for t in config["tools"] if t["toolSpec"]["name"] not in CHANGING_TOOLS]
     return {**config, "tools": reads, "toolChoice": FORCE_TOOL}
 
 

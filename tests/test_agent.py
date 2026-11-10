@@ -194,7 +194,8 @@ class AgentLoopTest(unittest.TestCase):
         Agent(client=fake, backend=self.be).ask("agent workshops?")
         self.assertEqual(fake.requests[0]["toolConfig"]["toolChoice"], {"any": {}})
         every = tools.bedrock_tool_config()["tools"]
-        self.assertEqual(fake.requests[0]["toolConfig"]["tools"], [t for t in every if t["toolSpec"]["name"] != "add_favorites"])
+        self.assertEqual(fake.requests[0]["toolConfig"]["tools"],
+                         [t for t in every if t["toolSpec"]["name"] not in ("add_favorites", "update_profile")])
         for req in fake.requests[1:]:
             self.assertNotIn("toolChoice", req["toolConfig"])
             self.assertEqual(req["toolConfig"]["tools"], every)
