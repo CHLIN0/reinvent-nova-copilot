@@ -2,7 +2,9 @@
 
 `python3 -m unittest discover -s tests` imports the test modules as top-level modules and skips this
 file, so tests/test_ledger_isolation.py imports it; discovery imports every module before any test runs.
-Subprocesses inherit ATLAS_COSTS_LEDGER.
+Subprocesses inherit ATLAS_COSTS_LEDGER. Covered: that command, `python3 -m unittest` and dotted runs
+(`tests.test_x`). Not covered: `discover -s tests -p <one file>` or `python tests/test_x.py` unless that
+module imports `tests` (most do, via `from tests.test_agent import ...`); set ATLAS_COSTS_LEDGER yourself then.
 """
 import atexit
 import os

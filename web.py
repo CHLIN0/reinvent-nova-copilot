@@ -431,7 +431,14 @@ def _log_failure(route: str, e: Exception, code: str) -> None:
     print(f"nova-copilot {route}: {type(e).__name__}{detail} -> {code}", file=sys.stderr, flush=True)
 
 
+# Official outcomes that already read well keep their own code and fixed sentence (atlas.catalog._MESSAGES).
+_KEPT_OFFICIAL = {"official_event_not_found": 404, "official_operation_closed": 409}
+
+
 def _failure(route: str, e: Exception) -> tuple[int, dict]:
+    if isinstance(e, catalog.CatalogError) and e.code in _KEPT_OFFICIAL:
+        _log_failure(route, e, e.code)
+        return _KEPT_OFFICIAL[e.code], {"error": e.code, "message": catalog._MESSAGES[e.code]}
     code = _error_code(e) or "server_error"
     _log_failure(route, e, code)
     status, message = _ERRORS[code]

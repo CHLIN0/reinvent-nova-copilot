@@ -167,6 +167,13 @@ class ErrorRouteTests(unittest.TestCase):
             official = web._plan()["official"]
         self.assertEqual(official, {"status": "error", "error": "server_error"})
 
+    def test_official_not_found_and_closed_keep_their_sentence(self):
+        for code, status in (("official_event_not_found", 404), ("official_operation_closed", 409)):
+            with self.subTest(code=code), mock.patch.object(web.catalog, "reserve_sessions",
+                                                            side_effect=catalog.CatalogError(code, message=catalog._MESSAGES[code])):
+                got, body, _ = self.call("/api/rsvp", {"session_ids": ["s-1"]})
+            self.assertEqual((got, body), (status, {"error": code, "message": catalog._MESSAGES[code]}))
+
     def test_existing_specific_errors_unchanged(self):
         status, body, _ = self.call("/api/plan", {"action": "fly", "session_ids": ["s-1"]})
         self.assertEqual((status, body), (400, {"error": "action must be 'add' or 'remove'"}))
