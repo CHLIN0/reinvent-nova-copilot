@@ -318,12 +318,14 @@ def _shared_rows():
             code = code if isinstance(code, str) and code else "catalog_unavailable"
             if code == "catalog_refresh_superseded" and not attempt:
                 continue  # a sign-in changed during the read: ask once more under the new sign-in
-            if code == "official_sign_in_required":  # as _request does after a 401: stop using this login
-                auth = official_auth.current_auth()
-                if auth is not None:
-                    auth.invalidate()
+            # No auth.invalidate() here: this error may predate a sign-in that just completed.
             raise CatalogError(code, retry_after=getattr(error, "retry_after", None),
                                message=_MESSAGES.get(code)) from None
+
+
+def _copy(row):
+    """A row the caller may change: its lists are copied too, so the shared snapshot stays intact."""
+    return {key: list(value) if isinstance(value, list) else value for key, value in row.items()}
 
 
 def _rows(source):
@@ -363,7 +365,7 @@ def load_sessions(source: str = "auto") -> list:
     "synthetic_fixture"); ``last_source()`` explains the choice.
     Returns copies the caller may change.
     """
-    return [dict(s) for s in _rows(source)]
+    return [_copy(s) for s in _rows(source)]
 
 
 def last_source() -> dict:
@@ -469,7 +471,7 @@ def get_session(session_id: str, source: str = "auto"):
                     by_code.setdefault(s.get("code"), n)
             _index.update(rows=rows, by_id=by_id, by_code=by_code)
         hits = [n for n in (_index["by_id"].get(session_id), _index["by_code"].get(session_id)) if n is not None]
-    return dict(rows[min(hits)]) if hits else None
+    return _copy(rows[min(hits)]) if hits else None
 
 
 def get_session_localized(session_id: str, locale: str, event_id: str = EVENT_ID) -> dict:

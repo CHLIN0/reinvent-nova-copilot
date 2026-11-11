@@ -266,7 +266,7 @@ class CopilotSharedCatalogTests(unittest.TestCase):
         with self.assertRaises(catalog.CatalogError) as raised:
             catalog.load_sessions("live")
         self.assertEqual(raised.exception.code, "official_sign_in_required")
-        self.assertTrue(self.auth.invalidated)  # as after a 401 on the copilot's own read
+        self.assertFalse(self.auth.invalidated)  # the error may predate a sign-in that just completed
         self.assertEqual(catalog.load_sessions("auto")[0]["source"], "synthetic_fixture")
 
     def test_read_superseded_by_a_sign_in_is_asked_once_more(self):
@@ -290,7 +290,18 @@ class CopilotSharedCatalogTests(unittest.TestCase):
         self.assertEqual(by_code["id"], "syn-00012")
         self.assertIsNone(catalog.get_session("nope"))
         first["title"] = "changed by a caller"
-        self.assertNotEqual(catalog.get_session("syn-00007")["title"], "changed by a caller")
+        first["topics"].append("changed by a caller")
+        again = catalog.get_session("syn-00007")
+        self.assertNotEqual(again["title"], "changed by a caller")
+        self.assertNotIn("changed by a caller", again["topics"])
+
+    def test_changing_a_loaded_row_never_changes_the_shared_rows(self):
+        for source in ("fixture", "live"):
+            rows = catalog.load_sessions(source)
+            rows[0]["topics"].append("changed by a caller")
+            rows[0]["speakers"].append("changed by a caller")
+            again = catalog.load_sessions(source)[0]
+            self.assertNotIn("changed by a caller", again["topics"] + again["speakers"], source)
         self.assertEqual(self.api.list_calls, PAGES)
 
 
