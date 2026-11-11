@@ -48,3 +48,23 @@ When the attendee asks the Copilot panel anything, Nova Pro reads the official d
 - Blind review: when your tests pass, start a fresh Claude subagent on model Sonnet with the prompt in `~/.claude/skills/dev-host/references/blind-review.md`. Give it only this brief's path, the worktree path and `git diff main...HEAD`. Not your report. Fix or decline each finding with a reason. Round 2 gets the new diff and the previous findings only. No MERGE after round 2, or a finding that questions scope: stop and report to the host.
 - `.env` (git-ignored) holds Bedrock credentials; never print or commit it. No secrets, absolute local paths, or chat/session ids in committed files.
 - T9b runs in parallel and edits `atlas/costs.py`, `web.py` error handling, `web/copilot.js` error display, `.github/`. Keep your `web.py` edits inside `_briefing` and `_chat` so the host can merge both.
+
+## Round 2 (after the revert, 2026-11-12)
+
+Branch: `t9a-fix-briefing` from `origin/main`. Start with `git revert --no-edit 9196f04` so the T9a changes come back, then fix on top. Same builder, same must-nots as above.
+
+### Why
+T9a (PR #12) merged on 2026-11-11 and was reverted on main (9196f04). On BR's account the signed-in briefing failed every time T9a was in the code: 3 of 3 on main with T9a and T9b, 2 of 2 on the T9c branch. The server logged `nova-copilot briefing: ModelErrorException (ModelErrorException) -> model_unavailable`. The pre-T9 commit `a0dd70b` and main after the revert briefed normally on the same data. The full Bedrock message was not captured, because `_log_failure` in `web.py` logs only the class and code. The briefing worked once on the T9a+T9b integration branch, on 2026-11-10 around 17:40 UTC, so the failure may depend on the briefing's content (a catalog diff, new-session facts or the one-question fact). Leading suspect: `toolChoice: any` on the briefing's first request, which the briefing prompt already tells to call `get_profile` and `get_my_schedule`.
+
+### Scope
+1. **Capture the real error.** For Bedrock `ModelErrorException` and `ValidationException` only, `_log_failure` also logs the first 300 characters of the Bedrock error message on stderr. Never log tokens, credentials or the request body. This is the only change allowed outside `_briefing`, `_chat` and `atlas/agent.py`.
+2. **Reproduce before fixing.** Build the briefing request the way `_briefing` does, with the synthetic catalog and a synthetic profile missing the arrival date. Include a reservation set across several days, a new-session fact and a moved-reservation fact. Run it against real Nova Pro with T9a restored. Record how often it fails and the error message. If it does not fail, say so and try the variants above. At most about 15 Nova calls.
+3. **Fix the cause you found, not the symptom.** Chat turns must stay forced to call a tool on their first request; that is T9a's goal and it held in the live smoke. If forcing is the cause for the briefing, the briefing may run its first request with `auto`; it already calls `get_profile`, `get_my_schedule` and `check_itinerary`, and `guard.strip_unverified_feasibility` covers it. Explain the choice with the evidence from step 2.
+4. **Tests.** An offline test pins whatever decides forced versus `auto` for the briefing, and a test covers the log line from step 1, asserting that no token-like text appears.
+
+### Done when
+- [ ] the reproduction record (counts and the error message) is in your report
+- [ ] all tests green; the briefing reproduction from step 2 passes 5 of 5 against real Nova on the fixed code
+- [ ] the L1 chat smoke from round 1 still shows a tool call on every answer (at most 4 calls)
+- [ ] blind review `VERDICT: MERGE`. Codex `review` profile through `node ~/.claude/skills/dev-host/scripts/codex-run.mjs` if `codex-run.mjs profiles` and a short run show the quota is back; otherwise a fresh Claude Sonnet subagent
+- [ ] commit on `t9a-fix-briefing`; do not push (the host pushes, opens the PR and checks the briefing on BR's account)

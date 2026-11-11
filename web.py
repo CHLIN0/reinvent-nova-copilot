@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import threading
 import time
@@ -432,13 +433,27 @@ def _error_code(e: Exception) -> str | None:
     return None
 
 
+_LOGGED_MESSAGES = {"ModelErrorException", "ValidationException"}  # Bedrock errors whose message says what went wrong
+_TOKEN_LIKE = re.compile(r"[A-Za-z0-9+/=_.\-]{24,}")
+
+
 def _log_failure(route: str, e: Exception, code: str) -> None:
-    """Exception class and fixed public code only: never the message, token, credentials or request body."""
+    """The "nova-copilot" line: exception class and fixed public code only. Never a token, credentials or request body.
+
+    For Bedrock ModelErrorException / ValidationException a second line, "bedrock-message", carries the first 300
+    characters of Bedrock's own message with token-like runs redacted: the T9a briefing failure could not be
+    diagnosed from the class alone."""
     detail = getattr(e, "code", None)
+    message = None
     if type(e).__module__.split(".")[0] == "botocore":
-        detail = ((getattr(e, "response", None) or {}).get("Error") or {}).get("Code")
+        error = (getattr(e, "response", None) or {}).get("Error") or {}
+        detail = error.get("Code")
+        if detail in _LOGGED_MESSAGES and isinstance(error.get("Message"), str):
+            message = _TOKEN_LIKE.sub("[redacted]", " ".join(error["Message"].split()))[:300]  # redact, then cut
     detail = f" ({detail})" if isinstance(detail, (str, int)) and str(detail).replace("_", "").isalnum() else ""
     print(f"nova-copilot {route}: {type(e).__name__}{detail} -> {code}", file=sys.stderr, flush=True)
+    if message:
+        print(f"bedrock-message {route}: {message}", file=sys.stderr, flush=True)
 
 
 # Official outcomes that already read well keep their own code and fixed sentence (atlas.catalog._MESSAGES).
