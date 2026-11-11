@@ -41,6 +41,17 @@ Offline rows use the synthetic fixture catalog and a mocked Bedrock client; they
 | C2 | `search_sessions`, `plan_itinerary` and `check_itinerary` results name the day as `day` (ISO) plus `weekday` (one day) or a `days` list | unit | T9c adds, `tests/test_weekday.py` (`ToolWeekdayTest`) | synthetic catalog | yes | |
 | C3 | When the attendee named exactly one weekday and no successful latest `plan_itinerary` covers that date, one sentence naming the planned and the asked-for day is appended (English or Chinese); nothing when the plan is on the named day | unit | T9c adds, `tests/test_battery.py` (`test_tuesday_planned_*`, `test_zh_tuesday_*`), `tests/test_weekday.py` (`MismatchTest`) | scripted tool calls | yes | append only; the host's live check repeats L2 |
 
+## T12 rows
+
+| Row | Behaviour / interface | Level | Test location | Fixture / data | Runs in CI? | Notes |
+|---|---|---|---|---|---|---|
+| T12-1 | Event Atlas serves its last complete snapshot at once; a stale one starts exactly one background refresh, also under concurrent requests; only the first load with no snapshot waits, and concurrent first loads share that read; a failed refresh keeps serving the last snapshot as stale; a revoked sign-in is never served | unit | `tests/test_catalog_swr.py` (`AtlasStaleWhileRevalidateTests`) | synthetic 2,516-session pages (`tests/synthetic_official.py`), fake clock | yes | |
+| T12-2 | A refresh (background or first load) that started before a sign-in change never fills the cache; sign-in clears the shared snapshot | unit | `tests/test_catalog_swr.py` (`test_refresh_started_before_sign_in_change_is_discarded`, `test_first_load_superseded_*`, `test_sign_in_clears_the_shared_snapshot`) | synthetic, fake transport | yes | |
+| T12-3 | The copilot's `load_sessions` makes no ListSessions call of its own while Event Atlas runs in the process: its rows are a view built during Event Atlas's read, identical to its own `normalize_session` output, all `source: "official_api"` (T6's live check) | unit | `tests/test_catalog_swr.py` (`CopilotSharedCatalogTests`) | synthetic, fake transport | yes | |
+| T12-4 | `get_session` looks up an index built once per snapshot, never calls `load_sessions`, and returns a copy of that row only | unit | `tests/test_catalog_swr.py` (`test_get_session_uses_an_index_and_copies_only_the_row`) | synthetic | yes | |
+| T12-5 | `/api/catalog` through `web.py`'s proxy is gzipped only when `Accept-Encoding` allows gzip; meta carries `refreshing`, `received_at` and `sync`; one read serves both views (`/api/health` `public_cache.refreshes` = 1) | unit | `tests/test_catalog_swr.py` (`GzipTests`, `OneProcessEndToEndTests`) | synthetic, `web.start_explorer` with a fake transport | yes | |
+| T12-L | After 70 s idle, a page load gets `/api/catalog` in under 300 ms and `/api/my-schedule` in under 1.5 s; one ListSessions sync per refresh in `/api/health` | live | host, BR's account | BR's official account | no | builder's fake-transport timing in the T12 report |
+
 ## Live rows (not in CI)
 
 | Row | Behaviour | Level | How | Data | Runs in CI? | Notes |

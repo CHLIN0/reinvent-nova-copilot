@@ -494,10 +494,12 @@ class Handler(BaseHTTPRequestHandler):
         allowed = {f"http://127.0.0.1:{port}", f"http://localhost:{port}"}
         return origin if origin in allowed else f"http://{self.headers.get('Host')}" if self._host_ok() else f"http://127.0.0.1:{port}"
 
-    def _send(self, code: int, body: bytes, ctype: str, csp: bool = False) -> None:
+    def _send(self, code: int, body: bytes, ctype: str, csp: bool = False, headers: dict | None = None) -> None:
         self.send_response(code)
         if csp:
             self.send_header("Content-Security-Policy", EXPLORER_CSP)
+        for name, value in (headers or {}).items():
+            self.send_header(name, value)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
@@ -517,13 +519,17 @@ class Handler(BaseHTTPRequestHandler):
         port = _state.get("explorer_port")
         if not port:
             return self._json(404, {"error": "explorer disabled"})
-        req = Request(f"http://127.0.0.1:{port}{self.path}", headers={"Host": f"127.0.0.1:{port}"})
+        headers = {"Host": f"127.0.0.1:{port}"}
+        if self.headers.get("Accept-Encoding"):  # the catalog is sent gzipped when the browser accepts it
+            headers["Accept-Encoding"] = self.headers["Accept-Encoding"]
+        req = Request(f"http://127.0.0.1:{port}{self.path}", headers=headers)
         try:
             with urlopen(req, timeout=60) as r:
-                body, code, ctype = r.read(), r.status, r.headers.get("Content-Type", "application/octet-stream")
+                body, code, got = r.read(), r.status, r.headers
         except HTTPError as e:
-            body, code, ctype = e.read(), e.code, e.headers.get("Content-Type", "application/json")
-        self._send(code, body, ctype)
+            body, code, got = e.read(), e.code, e.headers
+        ctype = got.get("Content-Type", "application/json" if code >= 400 else "application/octet-stream")
+        self._send(code, body, ctype, headers={k: got[k] for k in ("Content-Encoding", "Vary") if got.get(k)})
 
     def do_GET(self):
         if not self._host_ok():
@@ -623,7 +629,7 @@ class Handler(BaseHTTPRequestHandler):
         return self._json(404, {"error": "not found"})
 
 
-def start_explorer(port: int) -> None:
+def start_explorer(port: int):
     """Run Event Atlas (agenda explorer, calendars, 3D campus) in this process, sharing the copilot's sign-in."""
     import sys
 
@@ -652,10 +658,13 @@ def start_explorer(port: int) -> None:
 
     srv = atlas_server.ExclusiveHTTPServer(("127.0.0.1", port), atlas_server.SpatialHandler)
     srv.connection = SharedConnection(port)
-    srv.catalog = OfficialCatalog(official_auth.get_access_token)
+    # One ListSessions read for the whole process: the copilot's rows are a view of Event Atlas's snapshot.
+    srv.catalog = OfficialCatalog(official_auth.get_access_token, views={"copilot": catalog.shared_row})
+    catalog.use_shared(srv.catalog)
     srv.connection.catalog = srv.catalog
     srv.static_root = Path(__file__).resolve().parent / "explorer" / "ui" / "dist"
     threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv
 
 
 def main() -> None:

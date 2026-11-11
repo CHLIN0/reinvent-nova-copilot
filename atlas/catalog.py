@@ -230,6 +230,11 @@ def normalize_session(item, event_zone="America/Los_Angeles"):
     }
 
 
+def shared_row(item, event):
+    """This module's row for one raw ListSessions item, built during Event Atlas's read (see use_shared)."""
+    return normalize_session(item, (event.get("timezone") if isinstance(event, dict) else None) or "America/Los_Angeles")
+
+
 # ---------------------------------------------------------------------------
 # Loading
 # ---------------------------------------------------------------------------
@@ -237,6 +242,17 @@ def normalize_session(item, event_zone="America/Los_Angeles"):
 _cache_lock = threading.Lock()
 _live_cache = {"at": None, "sessions": None}
 _last_source = {"source": None, "reason": None}
+_fixture_cache = {"key": None, "rows": None}
+_index = {"rows": None, "by_id": None, "by_code": None}
+# Event Atlas's OfficialCatalog when it runs in this process (web.py). Its snapshot carries a
+# "copilot" view built with shared_row, so the whole process makes one ListSessions read per refresh.
+_shared = None
+
+
+def use_shared(official_catalog):
+    """Serve live rows from Event Atlas's snapshot (view "copilot") instead of a read of our own."""
+    global _shared
+    _shared = official_catalog
 
 
 def list_sessions_live(event_id=EVENT_ID):
@@ -283,34 +299,71 @@ def load_fixture():
     return rows
 
 
-def load_sessions(source: str = "auto") -> list:
-    """"fixture" | "live" | "auto" (live if signed in, else fixture).
+def _fixture_rows():
+    """The fixture file's rows, read once per file version; never mutated."""
+    stat = FIXTURE_PATH.stat()
+    key = (str(FIXTURE_PATH), stat.st_mtime_ns, stat.st_size)
+    with _cache_lock:
+        if _fixture_cache["key"] != key:
+            _fixture_cache.update(key=key, rows=load_fixture())
+        return _fixture_cache["rows"]
 
-    Every returned session carries ``source`` ("official_api" or
-    "synthetic_fixture"); ``last_source()`` explains the choice.
-    """
+
+def _shared_rows():
+    for attempt in range(2):
+        try:
+            return _shared.snapshot("copilot")["sessions"]
+        except Exception as error:  # Event Atlas raises fixed codes only
+            code = getattr(error, "code", None)
+            code = code if isinstance(code, str) and code else "catalog_unavailable"
+            if code == "catalog_refresh_superseded" and not attempt:
+                continue  # a sign-in changed during the read: ask once more under the new sign-in
+            if code == "official_sign_in_required":  # as _request does after a 401: stop using this login
+                auth = official_auth.current_auth()
+                if auth is not None:
+                    auth.invalidate()
+            raise CatalogError(code, retry_after=getattr(error, "retry_after", None),
+                               message=_MESSAGES.get(code)) from None
+
+
+def _rows(source):
+    """The current rows without a copy (shared, never mutated): fixture, Event Atlas's snapshot, or our cache."""
     if source not in ("auto", "live", "fixture"):
         raise ValueError("source must be auto, live or fixture")
     if source == "fixture" or (source == "auto" and not official_auth.is_signed_in()):
         _last_source.update(source="synthetic_fixture",
                             reason="requested" if source == "fixture" else "not_signed_in")
-        return load_fixture()
-    with _cache_lock:
-        cached_at = _live_cache["at"]
-        if cached_at is not None and time.monotonic() - cached_at < LIVE_CACHE_SECONDS:
-            _last_source.update(source="official_api", reason="cache")
-            return [dict(s) for s in _live_cache["sessions"]]
+        return _fixture_rows()
     try:
+        if _shared is not None:
+            rows = _shared_rows()
+            _last_source.update(source="official_api", reason="shared")
+            return rows
+        with _cache_lock:
+            cached_at = _live_cache["at"]
+            if cached_at is not None and time.monotonic() - cached_at < LIVE_CACHE_SECONDS:
+                _last_source.update(source="official_api", reason="cache")
+                return _live_cache["sessions"]
         rows = list_sessions_live()
     except CatalogError as error:
         if source == "live":
             raise
         _last_source.update(source="synthetic_fixture", reason=error.code)
-        return load_fixture()
+        return _fixture_rows()
     with _cache_lock:
         _live_cache.update(at=time.monotonic(), sessions=rows)
     _last_source.update(source="official_api", reason="live")
-    return [dict(s) for s in rows]
+    return rows
+
+
+def load_sessions(source: str = "auto") -> list:
+    """"fixture" | "live" | "auto" (live if signed in, else fixture).
+
+    Every returned session carries ``source`` ("official_api" or
+    "synthetic_fixture"); ``last_source()`` explains the choice.
+    Returns copies the caller may change.
+    """
+    return [dict(s) for s in _rows(source)]
 
 
 def last_source() -> dict:
@@ -318,8 +371,11 @@ def last_source() -> dict:
 
 
 def clear_cache():
+    """Forget the live catalog (sign-in changed); Event Atlas's shared snapshot is cleared too."""
     with _cache_lock:
         _live_cache.update(at=None, sessions=None)
+    if _shared is not None:
+        _shared.invalidate(clear=True)
 
 
 # ---------------------------------------------------------------------------
@@ -402,10 +458,18 @@ def search_sessions(query: str = "", types: list | None = None, levels: list | N
 
 
 def get_session(session_id: str, source: str = "auto"):
-    for s in load_sessions(source):
-        if s.get("id") == session_id or (s.get("code") and s.get("code") == session_id):
-            return s
-    return None
+    """One session by id or code (the earlier row wins, as in a scan); a copy of that row only."""
+    rows = _rows(source)
+    with _cache_lock:
+        if _index["rows"] is not rows:  # built once per snapshot
+            by_id, by_code = {}, {}
+            for n, s in enumerate(rows):
+                by_id.setdefault(s.get("id"), n)
+                if s.get("code"):
+                    by_code.setdefault(s.get("code"), n)
+            _index.update(rows=rows, by_id=by_id, by_code=by_code)
+        hits = [n for n in (_index["by_id"].get(session_id), _index["by_code"].get(session_id)) if n is not None]
+    return dict(rows[min(hits)]) if hits else None
 
 
 def get_session_localized(session_id: str, locale: str, event_id: str = EVENT_ID) -> dict:
