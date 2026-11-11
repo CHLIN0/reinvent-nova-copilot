@@ -68,3 +68,40 @@ T9a (PR #12) merged on 2026-11-11 and was reverted on main (9196f04). On BR's ac
 - [ ] the L1 chat smoke from round 1 still shows a tool call on every answer (at most 4 calls)
 - [ ] blind review `VERDICT: MERGE`. Codex `review` profile through `node ~/.claude/skills/dev-host/scripts/codex-run.mjs` if `codex-run.mjs profiles` and a short run show the quota is back; otherwise a fresh Claude Sonnet subagent
 - [ ] commit on `t9a-fix-briefing`; do not push (the host pushes, opens the PR and checks the briefing on BR's account)
+
+## Round 3 (first briefing after sign-in, 2026-11-11)
+
+Branch: `t9a-first-briefing` from `origin/main` (87fbc9c or later). Same builder, same must-nots as above.
+
+### Why
+PR #14 (greedy decoding) merged on 2026-11-11, and T9c (PR #13) merged on top of it. Host check on BR's account in the shared agent browser:
+- The **first** signed-in briefing after each server restart and sign-in failed: 2 of 2 restarts, on f2c1a4a and on f5d489b. Each failure logged `ModelErrorException`, "Model produced invalid sequence as part of ToolUse". No ledger row was written, so the failure is on the round-0 request (forced `toolChoice: any`).
+- Every later briefing on the same server passed: 4 of 4. Two of those carried 16 new catalog sessions.
+- Chat stays healthy: "Tell me about GHJ212." called `get_session`, and Tuesday / 週二 planned on 2026-12-01.
+- Main without T9a briefed normally right after a restart on 2026-11-11.
+- Round 2's reproduction ran **signed out**. It had no official MCP tools and no fresh official catalog load, so it could not hit this path.
+
+What changes on the first briefing after sign-in (from the code; unverified as the cause):
+- `_start_sign_in` clears `catalog` and `tools._official_cache` only after `official_auth.sign_in` returns. The page may already be loading `/?signin=complete` by then, so the first briefing can race those resets.
+- The first briefing loads the official catalog and lists the official MCP tools. On this path the forced request offers those read-only `aws_events__*` tools.
+- The agent's history is empty. The schedule diff runs against the previous server run.
+
+### Scope
+1. **Capture the failing request.** On a briefing `ModelErrorException` or `ValidationException`, write what was sent to one JSON file under `local-private/debug/` (git-ignored). Include:
+   - `toolChoice`;
+   - each tool's name and the byte size of its input schema, plus the full schema of every `aws_events__*` tool;
+   - the system prompt's length;
+   - the messages.
+
+   Never write tokens, credentials or headers. Keep one file per failure, and at most the 5 newest files. Test it.
+2. **Stop and hand off for capture.** Commit step 1 and report to the host. The host will run your branch on BR's account, restart, sign in, and put the captured file in your worktree's `local-private/debug/`.
+3. **Replay and find the cause.** Replay the captured request against real Nova Pro. Change one thing at a time: drop the official tools, `toolChoice: auto`, and an empty versus non-empty history. Name the smallest change that turns the failure into a pass. At most about 20 Nova calls.
+4. **Fix the cause.** Keep chat turns forced on their first request. If the cause is the forced request together with the official tool specs, prefer fixing what the forced request offers (for example only our own read tools) over dropping forcing. Explain the choice with the replay evidence.
+5. **Tests.** Pin the fix offline. Add a test that the capture holds no token-like text.
+
+### Done when
+- [ ] the capture is committed and tested, and the host has handed back a captured failing request
+- [ ] the replay table (variant, passes / tries) is in your report
+- [ ] all tests green; replaying the captured request on the fixed code passes 5 of 5
+- [ ] blind review `VERDICT: MERGE` (Codex `review` profile if its quota allows, else a fresh Claude Sonnet subagent)
+- [ ] commit on `t9a-first-briefing`; do not push (the host pushes, opens the PR and checks the first briefing after a restart on BR's account)
