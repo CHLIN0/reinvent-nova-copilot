@@ -6,6 +6,8 @@ Write tools (add_favorites) run only if the `confirm` callback returns True.
 The first request of every user turn sets toolChoice "any", so each answer reads the data through at
 least one read tool; later rounds of the turn offer every tool with the default ("auto") so the model
 can finish or, if asked, write.
+A user turn that names a conference weekday carries one more text block with that weekday's date
+(tools.day_facts), so the model does not convert weekday words to dates itself.
 """
 from __future__ import annotations
 
@@ -17,7 +19,7 @@ from typing import Any, Callable
 
 from atlas.costs import append_usage
 from atlas.prompts import SYSTEM_PROMPT
-from atlas.tools import WRITE_TOOLS, Backend, bedrock_tool_config, dispatch
+from atlas.tools import WRITE_TOOLS, Backend, bedrock_tool_config, day_facts, dispatch
 
 DEFAULT_MODEL_ID = "us.amazon.nova-pro-v1:0"
 MAX_TOOL_ROUNDS = 6
@@ -146,7 +148,10 @@ class Agent:
 
     def ask(self, question: str) -> AgentResult:
         """One user turn. Keeps conversation history on the Agent for follow-ups."""
-        messages = self.history + [{"role": "user", "content": [{"text": question}]}]
+        content = [{"text": question}]
+        if facts := day_facts(question):  # the weekday's date comes from code, not from the model's own conversion
+            content.append({"text": facts})
+        messages = self.history + [{"role": "user", "content": content}]
         trace: list[ToolCall] = []
         rounds = 0
         while True:

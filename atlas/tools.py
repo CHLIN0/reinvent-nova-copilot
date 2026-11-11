@@ -8,6 +8,7 @@ inject a stub backend with `Backend(...)`.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -268,11 +269,13 @@ def _call(name: str, args: dict, be: Backend) -> Any:
         codes = {c.upper() for w in words for c in re.findall(r"\b[A-Za-z]{2,4}(?:-[A-Za-z]{2,4})?\d{3}[A-Za-z]?\b", w)}
         exact = [s for s in (be.get_session(c) for c in sorted(codes)) if s]
         if exact:  # the attendee named session codes: return those sessions directly
-            return {"count": len(exact), "sessions": [_brief(s) for s in exact], "matched_by": "session code"}
+            return {"count": len(exact), **_day_fields(_local_date(s["start"]) for s in exact if s.get("start")),
+                    "sessions": [_brief(s) for s in exact], "matched_by": "session code"}
         kw = {k: args[k] for k in ("query", "types", "levels", "topics", "day", "venue") if args.get(k)}
         kw["limit"] = int(args.get("limit") or 10)
         rows = be.search_sessions(**kw)
-        return {"count": len(rows), "sessions": [_brief(s) for s in rows]}
+        days = {_day_date(args["day"])} if args.get("day") else {_local_date(s["start"]) for s in rows if s.get("start")}
+        return {"count": len(rows), **_day_fields(days), "sessions": [_brief(s) for s in rows]}
     if name == "get_session":
         s = be.get_session(args["session_id"])
         if not s:
@@ -292,7 +295,8 @@ def _call(name: str, args: dict, be: Backend) -> Any:
         sessions += [s for s in lock["reserved"] if s["id"] not in have]
         sessions.sort(key=lambda s: s.get("start", ""))
         result = be.check_itinerary(sessions, buffer_min=int(args.get("buffer_min", 10)))
-        out = {"sessions": [_brief(s, 0) for s in sessions], "check": result, "not_found": missing}
+        out = {**_day_fields(_local_date(s["start"]) for s in sessions if s.get("start")),
+               "sessions": [_brief(s, 0) for s in sessions], "check": result, "not_found": missing}
         return _with_lock(out, lock)
     if name == "plan_itinerary":
         candidates, missing = _resolve(be, args.get("candidate_ids", []))
@@ -340,7 +344,9 @@ def _call(name: str, args: dict, be: Backend) -> Any:
             result["limit_conflicts"] = [{**_brief(s, 0), "reason": s["conflict"]} for s in flagged]
             result["warnings"] = list(result.get("warnings") or []) + [
                 f"{s.get('code') or s['id']} is must-attend but {s['conflict']}" for s in flagged]
-        out = {"plan": result, "not_found": missing + must_missing, "free_windows": free}
+        chosen = [c for c in (result.get("chosen") or []) if isinstance(c, dict)] if isinstance(result, dict) else []
+        planned = {_local_date(c["start"]) for c in chosen if c.get("start")} or days
+        out = {**_day_fields(planned), "plan": result, "not_found": missing + must_missing, "free_windows": free}
         if args.get("use_profile", True):
             out["home_base_travel"] = _home_base_travel(be, result, args.get("prefer") or "fastest")
         return _with_lock(out, lock)
@@ -575,6 +581,44 @@ def _apply_time_limits(be: Backend, sessions: list[dict], args: dict, must_ids: 
 
 
 EVENT_DAYS = {"mon": "2026-11-30", "tue": "2026-12-01", "wed": "2026-12-02", "thu": "2026-12-03", "fri": "2026-12-04"}
+WEEKDAY_ABBR = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+WEEKDAY_NAMES = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+_ZH_DAY = "一二三四五"
+# Conference weekdays as an attendee writes them: English full or short names, 週二 / 周二 / 星期二 / 禮拜二.
+_NAMED_DAY = re.compile(r"(?<![A-Za-z])(mon(?:day)?|tue(?:s|sday)?|wed(?:nesday)?|thu(?:rs?|rsday)?|fri(?:day)?)(?![A-Za-z])"
+                        r"|(?:週|周|星期|禮拜)([一二三四五])", re.I)
+
+
+def weekday_of(day: str) -> str | None:
+    """'Tue' for '2026-12-01'; None for anything that is not an ISO date."""
+    from datetime import date
+
+    try:
+        return WEEKDAY_ABBR[date.fromisoformat(day[:10]).weekday()]
+    except (TypeError, ValueError):
+        return None
+
+
+def named_days(text: str) -> list[str]:
+    """ISO dates of the conference weekdays named in the text, in order of first mention."""
+    out: list[str] = []
+    for en, zh in _NAMED_DAY.findall(text or ""):
+        iso = EVENT_DAYS[en[:3].lower()] if en else list(EVENT_DAYS.values())[_ZH_DAY.index(zh)]
+        if iso not in out:
+            out.append(iso)
+    return out
+
+
+def day_facts(text: str) -> str:
+    """One fact line for the conference weekdays named in the text, e.g. 'Tuesday = 2026-12-01 (Las Vegas)'."""
+    days = named_days(text)
+    return "; ".join(f"{WEEKDAY_NAMES[list(EVENT_DAYS.values()).index(d)]} = {d}" for d in days) + " (Las Vegas)" if days else ""
+
+
+def _day_fields(days: Any) -> dict:
+    """The day(s) a result covers as ISO date plus weekday, so the answer can quote both."""
+    rows = [{"day": d, "weekday": w} for d in sorted({d for d in days if d}) if (w := weekday_of(d))]
+    return rows[0] if len(rows) == 1 else {"days": rows} if rows else {}
 
 
 def _event_time(value: str) -> str:

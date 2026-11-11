@@ -384,6 +384,43 @@ class Battery(Base):
         self.assertIn("call plan_itinerary as well", specs["route_between"])
         self.assertIn("call route_between as well", specs["plan_itinerary"])
 
+    # T9c ----------------------------------------------------------------------------------------
+    def test_tuesday_planned_on_wednesday_says_so(self):
+        """Live finding (T9c): "Plan my Tuesday" planned 2026-12-02. The answer keeps the model's words and
+        gains one sentence naming the planned and the asked-for day."""
+        q = "I'm at Park MGM, max 8000 steps a day. Plan my Tuesday."
+        model = ("Here's your Tuesday itinerary.\n08:00-10:00 SYN-KEY02 Synthetic keynote: data and AI together, Venetian\n"
+                 "Travel times are estimates.")
+        out = self.chat(q, [tool_use("plan_itinerary", {"candidate_ids": WED_ALL, "day": "2026-12-02"}, "a"),
+                            final(model)])
+        user = self.fake.requests[0]["messages"][-1]["content"]
+        self.assertEqual(user, [{"text": q}, {"text": "Tuesday = 2026-12-01 (Las Vegas)"}])
+        self.assertEqual((out["plan"]["day"], out["plan"]["weekday"]), ("2026-12-02", "Wed"))
+        text = out["text"]
+        self.assertPanel(text)
+        self.assertTrue(text.startswith(model), text)  # nothing deleted or rewritten
+        self.assertTrue(text.endswith(
+            "\nNote: this plan is for Wednesday 2026-12-02, but you asked for Tuesday 2026-12-01."), text)
+        self.assertEqual(text.count("Note: this plan is for"), 1)
+
+    def test_tuesday_planned_on_tuesday_adds_nothing(self):
+        q = "I'm at Park MGM, max 8000 steps a day. Plan my Tuesday."
+        model = "Here's your Tuesday itinerary.\nTravel times are estimates."
+        out = self.chat(q, [tool_use("plan_itinerary", {"candidate_ids": ["syn-k001", "syn-0002", "syn-0006", "syn-0010"],
+                                                        "day": "2026-12-01"}, "a"), final(model)])
+        self.assertEqual((out["plan"]["day"], out["plan"]["weekday"]), ("2026-12-01", "Tue"))
+        self.assertNotIn("Note: this plan is for", out["text"])
+        self.assertNotIn("你問的是", out["text"])
+
+    def test_zh_tuesday_planned_on_wednesday_says_so_in_chinese(self):
+        q = "我住 Park MGM，每天最多走 8000 步，幫我排週二的議程。"
+        model = "這是你週二的行程。\n08:00-10:00 SYN-KEY02 合成主題演講，Venetian\n交通時間為估計值。"
+        out = self.chat(q, [tool_use("plan_itinerary", {"candidate_ids": WED_ALL, "day": "2026-12-02"}, "a"),
+                            final(model)])
+        self.assertEqual(self.fake.requests[0]["messages"][-1]["content"][1], {"text": "Tuesday = 2026-12-01 (Las Vegas)"})
+        self.assertTrue(out["text"].startswith(model), out["text"])
+        self.assertTrue(out["text"].endswith("\n注意：這份安排排的是週三（2026-12-02），你問的是週二（2026-12-01）。"), out["text"])
+
     # prompt -------------------------------------------------------------------------------------
     def test_prompt_carries_the_panel_rules(self):
         """The system prompt sent to Bedrock carries the T4 rules and the language rule."""
