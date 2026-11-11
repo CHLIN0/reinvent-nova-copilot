@@ -17,6 +17,7 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from types import SimpleNamespace
 
 from atlas.env import load_dotenv
 
@@ -24,6 +25,7 @@ load_dotenv()
 
 from atlas import catalog, official_auth, profile, translate  # noqa: E402
 from atlas.agent import Agent  # noqa: E402
+from atlas.prompts import BRIEFING_SYSTEM_PROMPT  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent / "web"
 EXPLORER_DIST = Path(__file__).resolve().parent / "explorer" / "ui" / "dist"
@@ -179,8 +181,9 @@ def _when(s: dict) -> str:
 
 
 def _briefing() -> dict:
-    """Welcome-back: compare the official schedule with the last saved snapshot, then ask Nova for a short plan."""
-    from atlas import guard
+    """Welcome-back: compare the official schedule with the last saved snapshot, run the fixed checks in code, then
+    ask Nova for a short summary in one request with no tools. If Bedrock fails, the facts come back on their own."""
+    from atlas import guard, tools
 
     sched = _my_schedule() if official_auth.is_signed_in() else {"signed_in": False}
     live = None  # the catalog, only when it fully loaded from the official API (never the fixture or a fallback)
@@ -212,9 +215,20 @@ def _briefing() -> dict:
     for r in sched.get("reserved") or []:
         if r.get("start"):
             by_day.setdefault(r["start"][:10], []).append(r["id"])
-    checks = "; ".join(f"{day}: {json.dumps(ids)}" for day, ids in sorted(by_day.items()))
+    # The fixed steps, run by the server through the tools' own dispatcher (T11): the profile, then check_itinerary
+    # once for every day with reservations. Nova used to choose these calls and sometimes checked one day or none.
+    backend = _agent().backend
+    calls: list[dict] = []
+
+    def run(name: str, args: dict) -> tuple[dict, bool]:
+        result, ok = tools.dispatch(name, args, backend)
+        calls.append({"name": name, "input": args, "ok": ok, "result": result})
+        return result, ok
+
+    got, ok = run("get_profile", {})
+    day_lines = [_day_check_line(day, *run("check_itinerary", {"session_ids": ids})) for day, ids in sorted(by_day.items())]
     # At most one profile question, chosen here: the first planning detail still missing, in profile.PLANNING_PRIORITY order.
-    saved = profile.load_profile()["fields"]
+    saved = got["fields"] if ok else profile.load_profile()["fields"]
     words = {"hotel": "my hotel", "max_steps_per_day": "my daily walking limit", "arrival": "my arrival date",
              "departure": "my departure date", "interests": "the topics I am interested in", "role": "my job role",
              "experience_level": "my experience level", "transport": "how I prefer to get around"}
@@ -231,11 +245,13 @@ def _briefing() -> dict:
     # Only a real change is stated: an empty diff in the prompt ("changed: {...: []}") sent Nova Pro into a runaway
     # tool call on every first briefing after a restart ("invalid sequence as part of ToolUse", T9a round 3 replay).
     changed = diff if diff and any(v["added"] or v["removed"] for v in diff.values()) else None
-    prompt = ("Brief me as I open the app (this is not a new question). Call get_profile and get_my_schedule. "
+    language = saved.get("language")
+    prompt = ("Brief me as I open the app (this is not a new question). "
               + ("This is my first visit. " if first_visit else f"Since my last visit my official schedule changed: {json.dumps(changed)}. " if changed else "")
               + "".join(facts)
-              + (f"Before saying anything about feasibility, call check_itinerary once per conference day with these reserved session ids: {checks}. "
-                 if checks else "Do not claim any schedule is feasible unless check_itinerary or plan_itinerary confirmed it. ")
+              + ("Travel checks between my reserved sessions, one per conference day: " + " ".join(day_lines) + " "
+                 if day_lines else "I have no reserved sessions, so no travel was checked. ")
+              + (f"Answer in {language}. " if language else "")
               + "In under 120 words: 1) name any "
               + ("moved or cancelled reservation, " if changes and (changes["moved"] or changes["cancelled"]) else "")
               + "conflict or tight transition the checks found, "
@@ -244,13 +260,88 @@ def _briefing() -> dict:
               + "sessions to add on days with gaps, or what to fix), "
               + ("3) ask me for that one missing profile detail in one short line, and ask nothing else about my profile."
                  if ask else "3) ask me nothing about my profile."))
-    out = _chat(prompt, allow_write=False, feature="briefing")
-    out["text"], out["removed"] = guard.strip_unverified_feasibility(out["text"], out["trace"])
-    out["schedule_diff"] = diff
-    out["catalog_diff"] = {"new": len(changes["new"]), "moved": changes["moved"], "cancelled": changes["cancelled"],
-                           "recommended": [s["code"] for s in recommended]} if changes else None
-    out["first_visit"] = first_visit
+    # The panel's facts, written by code: shown with Nova's summary, and on their own when Nova fails.
+    since = None if first_visit or diff is None else _since_line(changed, changes, recommended)
+    profile_line = f"Your profile does not yet say {_yours(ask)}: tell me in the chat to plan around it." if ask else None
+    facts_out = [line for line in [since, *day_lines, profile_line] if line]
+    trace = [{**c, "confirmed": None, "by": "server"} for c in calls]
+    agent = _agent()
+    with _state_lock:  # one conversation at a time; Bedrock calls are serialised
+        try:
+            summary = agent.summarize(prompt, BRIEFING_SYSTEM_PROMPT, BRIEFING_MAX_TOKENS, feature="briefing")
+            error = None
+        except Exception as e:
+            if type(e).__module__.split(".")[0] != "botocore":  # only Bedrock failures fall back; bugs still surface
+                raise
+            _log_failure("briefing", e, "model_unavailable")
+            summary, error = "", "model_unavailable"
+        removed: list[str] = []
+        if summary:
+            from atlas import format as answer_format
+
+            text, removed = guard.strip_unverified_feasibility(answer_format.format_answer(summary, trace, prompt), trace)
+        else:
+            error = "model_unavailable"
+            text = "\n".join(facts_out + [BRIEFING_FALLBACK_NOTE])
+        agent.remember(prompt, text)
+    out = {"text": text, "removed": removed, "rounds": 0, "plan": None,
+           "trace": [{**c, "result": _short(c["result"])} for c in trace],
+           "suggested": _suggested(SimpleNamespace(text=text, trace=[SimpleNamespace(**c) for c in trace])),
+           "facts": facts_out, "status": _status(), "schedule_diff": diff, "first_visit": first_visit,
+           "catalog_diff": {"new": len(changes["new"]), "moved": changes["moved"], "cancelled": changes["cancelled"],
+                            "recommended": [s["code"] for s in recommended]} if changes else None}
+    if error:
+        out.update(error=error, message=BRIEFING_FALLBACK_NOTE)
     return out
+
+
+# 120 words is about 160 English tokens, or up to about 240 when the profile language is Chinese; 500 leaves room.
+BRIEFING_MAX_TOKENS = 500
+BRIEFING_FALLBACK_NOTE = ("Nova's summary is missing right now; these lines come straight from your official schedule "
+                          "and the travel checks.")
+
+
+def _yours(phrase: str) -> str:
+    """The attendee's own words in the briefing prompt ("my hotel") as the panel says them ("your hotel")."""
+    return phrase.replace("my ", "your ").replace("I am", "you are").replace(" I ", " you ")
+
+
+def _day_check_line(day: str, result: dict, ok: bool) -> str:
+    """What the server's check_itinerary found for one reserved day, as one line."""
+    from datetime import date
+
+    label = f"{date.fromisoformat(day):%a} {day}"
+    if not ok:
+        return f"{label}: the reservations could not be checked."
+    rows = [f"{s.get('code') or s.get('id')} {(s.get('start') or '')[11:16]}-{(s.get('end') or '')[11:16]} {s.get('venue') or ''}".strip()
+            for s in result.get("sessions") or []]
+    found, buffer = [], (result.get("check") or {}).get("buffer_min")
+    for t in (result.get("check") or {}).get("transitions") or []:
+        a, b, status = t.get("from"), t.get("to"), t.get("status")
+        if status == "overlap":
+            found.append(f"conflict, {a} overlaps {b}")
+        elif status == "not_enough_time":
+            found.append(f"conflict, {a} to {b} has {t.get('gap_minutes')} min for {t.get('travel_minutes')} min of travel "
+                         f"plus a {buffer} min buffer")
+        elif status == "tight":
+            found.append(f"tight transition {a} to {b} ({t.get('travel_minutes')} min of travel, {t.get('slack_minutes')} min to spare)")
+    if unresolved := (result.get("reservations_not_applied") or {}).get("ids"):
+        found.append(f"{len(unresolved)} reservation(s) could not be checked")
+    return (f"{label}, {len(rows)} reserved ({', '.join(rows)}): "
+            + ("; ".join(found) if found else "no conflicts or tight transitions") + ".")
+
+
+def _since_line(changed: dict | None, changes: dict | None, recommended: list[dict]) -> str:
+    """Since the last visit: the official schedule diff and the catalog changes, as one line."""
+    parts = [f"{key} +{len(v['added'])}/−{len(v['removed'])}" for key, v in (changed or {}).items() if v["added"] or v["removed"]]
+    for m in (changes or {}).get("moved", []):
+        parts.append(f"{m['code']} moved to {_when(m['to'])}, {m['to']['room']}, {m['to']['venue']}")
+    parts += [f"{c['code']} is no longer in the official catalog" for c in (changes or {}).get("cancelled", [])]
+    if (changes or {}).get("new"):
+        n = len(changes["new"])
+        parts.append(f"{n} new session{'' if n == 1 else 's'} in the catalog"
+                     + (f", matching your profile: {', '.join(s['code'] for s in recommended)}" if recommended else ""))
+    return "Since your last visit: " + "; ".join(parts) + "." if parts else "Nothing changed in your official schedule since your last visit."
 
 
 def _suggested(res) -> list[dict]:

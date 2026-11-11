@@ -302,31 +302,45 @@ class BriefingTest(Base):
         with mock.patch.object(tools, "official_tools", return_value=[]):
             return self.web._briefing(), fake
 
-    def test_prompt_asks_for_check_itinerary_per_day(self):
+    def test_server_checks_itinerary_once_per_reserved_day(self):
+        """T11 (was: the prompt asked Nova to call check_itinerary once per day; Nova sometimes checked one day or
+        none). The server runs the check for every reserved day with that day's ids, and the prompt states each result."""
         out, fake = self.brief([final("Hello.")])
+        checks = [c for c in out["trace"] if c["name"] == "check_itinerary"]
+        self.assertEqual([c["input"] for c in checks], [{"session_ids": ["syn-0002"]}, {"session_ids": ["syn-k002", "syn-0007"]}])
+        self.assertTrue(all(c["by"] == "server" for c in out["trace"]))
         prompt = fake.requests[0]["messages"][-1]["content"][0]["text"]
-        self.assertIn('check_itinerary once per conference day', prompt)
-        self.assertIn('2026-12-01: ["syn-0002"]', prompt)
-        self.assertIn('2026-12-02: ["syn-k002", "syn-0007"]', prompt)
+        self.assertIn("Tue 2026-12-01, 1 reserved (SYN-AI202 09:00-10:00 ", prompt)
+        self.assertIn("Wed 2026-12-02, 2 reserved (SYN-KEY02 08:00-10:00 venetian, SYN-AI407 10:30-11:30 wynn)", prompt)
 
-    def test_no_tool_calls_means_claims_are_stripped(self):
-        out, _ = self.brief([final("Your week is feasible, no conflicts. Consider SYN-GEN101 on Wednesday.")])
-        self.assertNotIn("check_itinerary", [c["name"] for c in out["trace"]])
+    def test_failed_checks_mean_claims_are_stripped(self):
+        """No successful itinerary check (here: the official reservations cannot be read) still strips feasibility
+        claims. T11: the server always runs the checks, so "no check" now means "the check failed"."""
+        fake = FakeBedrock([final("Your week is feasible, no conflicts. Consider SYN-GEN101 on Wednesday.")])
+        self.web._state["agent"] = Agent(client=fake, backend=fixture_backend(RuntimeError("schedule down")))
+        with mock.patch.object(tools, "official_tools", return_value=[]):
+            out = self.web._briefing()
+        checks = [c for c in out["trace"] if c["name"] == "check_itinerary"]
+        self.assertEqual(len(checks), 2)
+        self.assertFalse(any(c["ok"] for c in checks))
         self.assertEqual(out["removed"], ["Your week is feasible, no conflicts."])
         self.assertEqual(out["text"], "Consider SYN-GEN101 on Wednesday. " + guard.NOT_CHECKED)
 
     def test_checks_per_day_keep_the_text(self):
-        script = [tool_use("check_itinerary", {"session_ids": ["syn-0002"]}, "a"),
-                  tool_use("check_itinerary", {"session_ids": ["syn-k002", "syn-0007"]}, "b"),
-                  final("Both days are feasible; Wednesday 10:00 to 10:30 is a tight transition.")]
-        out, fake = self.brief(script)
+        real, results = tools.dispatch, []
+
+        def record(name, args, backend=None):  # the full results (the response shortens them for the panel)
+            result, ok = real(name, args, backend)
+            results.extend([result] if name == "check_itinerary" else [])
+            return result, ok
+
+        with mock.patch.object(tools, "dispatch", side_effect=record):
+            out, fake = self.brief([final("Both days are feasible; Wednesday 10:00 to 10:30 is a tight transition.")])
         checks = [c for c in out["trace"] if c["name"] == "check_itinerary"]
         self.assertEqual(len(checks), 2)
         self.assertTrue(all(c["ok"] for c in checks))
         self.assertEqual(out["removed"], [])
         self.assertIn("feasible", out["text"])
-        results = [json.loads(b["toolResult"]["content"][0]["text"])
-                   for m in fake.requests[-1]["messages"] for b in m["content"] if "toolResult" in b]
         self.assertEqual([r["locked_from_schedule"] for r in results], [["SYN-AI202"], ["SYN-KEY02", "SYN-AI407"]])
 
 

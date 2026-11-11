@@ -100,7 +100,8 @@ class CatalogDiffTest(Base):
         self.assertIn("My reservation SYN-AI407 moved from Wed 2026-12-02 10:30-11:30, Convention Promenade, Room 178, "
                       "wynn to Wed 2026-12-02 13:00-14:00, South Convention, Room 101, mandalay_bay.", prompt)
         self.assertIn("My reservation SYN-GEN309 is no longer in the official catalog.", prompt)
-        self.assertIn("check_itinerary once per conference day", prompt)
+        # T11: the server ran the check and states its result for the day ("call check_itinerary" is gone)
+        self.assertIn("Travel checks between my reserved sessions, one per conference day: Wed 2026-12-02, ", prompt)
         self.assertIn("under 120 words", prompt)
         self.assertNotIn("abstract", json.dumps(out["catalog_diff"]))
         snap = json.loads(self.snapshot_path.read_text())["sessions"]  # updated to what this visit saw
