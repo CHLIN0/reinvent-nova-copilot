@@ -192,9 +192,8 @@ class Battery(Base):
         mock.patch.object(web, "_my_schedule", return_value=schedule).start()
         fixture_catalog().start()
         long_tail = "Remember that walking between the Venetian and the Wynn takes longer than the map suggests. " * 2
+        # T11: the server runs get_profile and check_itinerary; Nova answers the one request with text only.
         self.fake = FakeBedrock([
-            tool_use("get_profile", {}, "p"),
-            tool_use("check_itinerary", {"session_ids": RESERVED}, "c"),
             final("## Welcome back\n**Wednesday has no conflicts** and one tight transition at 10:00 to 10:30.\n"
                   + long_tail + "Your profile has no hotel yet: which hotel are you staying at?"),
         ])
@@ -203,6 +202,7 @@ class Battery(Base):
         text = out["text"]
         self.assertPanel(text)
         self.assertIn("check_itinerary", [c["name"] for c in out["trace"]])
+        self.assertEqual(len(self.fake.requests), 1)
         self.assertTrue(text.startswith("Welcome back\nWednesday has no conflicts"), text)
         self.assertTrue(text.endswith("which hotel are you staying at?"), text)
 
@@ -264,9 +264,7 @@ class Battery(Base):
             web._state["agent"] = Agent(client=FakeBedrock([final("Welcome.")]), backend=self.be)
             web._briefing()  # first visit: records the snapshot, reports nothing
         catalog.clear_cache()
-        self.fake = FakeBedrock([
-            tool_use("get_profile", {}, "p"),
-            tool_use("check_itinerary", {"session_ids": ["syn-k002", "syn-0007"]}, "c"),
+        self.fake = FakeBedrock([  # T11: one text-only request; the server ran get_profile and check_itinerary
             final("**SYN-AI407 moved** to Wednesday 13:00-14:00 at Mandalay Bay; SYN-GEN309 is no longer in the catalog.\n"
                   "Wednesday has no conflicts after the move.\n"
                   "New for you: SYN-SEC999 Securing agent tool calls end to end, Thursday 11:30 at the Venetian.\n"
@@ -296,10 +294,10 @@ class Battery(Base):
         if saved:
             profile.update_profile(saved)
         mock.patch.object(web, "_my_schedule", return_value={"signed_in": False}).start()
-        self.fake = FakeBedrock([tool_use("get_profile", {}, "p"), final("Welcome.")])
+        self.fake = FakeBedrock([final("Welcome.")])
         web._state["agent"] = Agent(client=self.fake, backend=self.be)
         web._briefing()
-        self.assertEqual(self.fake.requests[0]["toolConfig"]["toolChoice"], {"any": {}})  # the briefing is forced too
+        self.assertNotIn("toolConfig", self.fake.requests[0])  # T11: the briefing request offers no tools (was: forced)
         prompt = self.fake.requests[0]["messages"][-1]["content"][0]["text"]
         self.assertLessEqual(prompt.count("does not yet say"), 1, prompt)
         rest = re.sub(r"My profile does not yet say [^.]*\. ", "", prompt)  # the one named item, if any
@@ -307,16 +305,18 @@ class Battery(Base):
             self.assertNotIn(item, rest, prompt)
         return prompt
 
-    def test_briefing_and_the_next_chat_turn_are_forced_and_greedy(self):
+    def test_briefing_has_no_tools_and_the_next_chat_turn_is_forced_and_greedy(self):
         """T9a round 2: the briefing's intermittent ModelErrorException ("invalid sequence as part of ToolUse") also
-        happened on main without T9a and without forcing; the fix is greedy decoding, and forcing stays on."""
+        happened on main without T9a and without forcing; the fix was greedy decoding, and forcing stays on for chat.
+        T11: the briefing request now has no toolConfig at all (it was forced); greedy decoding stays everywhere."""
         mock.patch.object(web, "_my_schedule", return_value={"signed_in": False}).start()
-        self.fake = FakeBedrock([tool_use("get_profile", {}, "p"), final("Welcome."),
+        self.fake = FakeBedrock([final("Welcome."),
                                  tool_use("get_session", {"session_id": "SYN-GEN205"}, "g"), final("SYN-GEN205 is a chalk talk.")])
         web._state["agent"] = Agent(client=self.fake, backend=self.be)
         web._briefing()
         web._chat("Tell me about SYN-GEN205.", allow_write=False)
-        self.assertEqual([r["toolConfig"].get("toolChoice") for r in self.fake.requests], [{"any": {}}, None, {"any": {}}, None])
+        self.assertNotIn("toolConfig", self.fake.requests[0])
+        self.assertEqual([r["toolConfig"].get("toolChoice") for r in self.fake.requests[1:]], [{"any": {}}, None])
         for r in self.fake.requests:
             self.assertEqual(r["inferenceConfig"]["temperature"], 0)
             self.assertEqual(r["additionalModelRequestFields"], {"inferenceConfig": {"topK": 1}})

@@ -8,6 +8,8 @@ least one read tool; later rounds of the turn offer every tool with the default 
 can finish or, if asked, write.
 A user turn that names a conference weekday carries one more text block with that weekday's date
 (tools.day_facts), so the model does not convert weekday words to dates itself.
+The briefing (web._briefing) is not a user turn: the server runs its fixed steps and Agent.summarize sends one
+request with no tools.
 """
 from __future__ import annotations
 
@@ -190,6 +192,26 @@ class Agent:
                 blocks.append(block)
                 trace.append(call)
             messages.append({"role": "user", "content": blocks})
+
+    def summarize(self, prompt: str, system_prompt: str, max_tokens: int, feature: str) -> str:
+        """One Converse request with no toolConfig and no earlier turns (earlier turns may hold toolUse blocks, which
+        Bedrock accepts only with a toolConfig). Bedrock errors propagate; the history is not changed here."""
+        if self.client is None:
+            self.client = make_client()
+        response = self.client.converse(
+            modelId=self.model_id,
+            system=[{"text": system_prompt}],
+            messages=[{"role": "user", "content": [{"text": prompt}]}],
+            inferenceConfig={**INFERENCE_CONFIG, "maxTokens": max_tokens},
+            additionalModelRequestFields=ADDITIONAL_FIELDS,
+        )
+        append_usage(self.model_id, feature, response.get("usage") or {}, 0)
+        return _text_of(response["output"]["message"]["content"])
+
+    def remember(self, prompt: str, answer: str) -> None:
+        """Add a finished exchange to the history as plain text, so the next chat turn sees it."""
+        self.history = self.history + [{"role": "user", "content": [{"text": prompt}]},
+                                       {"role": "assistant", "content": [{"text": answer}]}]
 
     def reset(self) -> None:
         self.history = []
