@@ -6,6 +6,7 @@ writes and automatic RSVP are intentionally unavailable in this stage.
 """
 import argparse
 import copy
+import gzip
 import json
 import threading
 from datetime import datetime, timezone
@@ -172,14 +173,14 @@ class OfficialConnection:
             self.callback.server_close()
 
 
-def project_catalog(value):
-    """Validate envelope and project public DTO (data transfer object) fields."""
-    if (not isinstance(value, dict) or type(value.get('version')) is not int
-            or value['version'] != 1 or not isinstance(value.get('sessions'), list)
-            or not isinstance(value.get('meta'), dict)):
-        raise CatalogUnavailable('catalog_invalid')
+_projection_lock = threading.Lock()
+_projection = {'source': None, 'sessions': None}
+_body = {'source': None, 'meta': None, 'raw': None, 'gzip': None}
+
+
+def _project_sessions(source):
     sessions = []
-    for item in value['sessions']:
+    for item in source:
         if not isinstance(item, dict) or not isinstance(item.get('session_id'), str) or not item['session_id']:
             raise CatalogUnavailable('catalog_invalid')
         row = {key: item.get(key) if isinstance(item.get(key), str) else None
@@ -196,6 +197,24 @@ def project_catalog(value):
         row['classification_version'] = CLASSIFICATION_VERSION
         row['derived_company_matches'] = company_matches(row)
         sessions.append(row)
+    return sessions
+
+
+def project_catalog(value):
+    """Validate envelope and project public DTO (data transfer object) fields.
+
+    Snapshots are never changed after they are built, so the projected rows of
+    the latest one are reused (classification is the costly part); only meta is
+    rebuilt per call. The returned rows are shared and must not be mutated.
+    """
+    if (not isinstance(value, dict) or type(value.get('version')) is not int
+            or value['version'] != 1 or not isinstance(value.get('sessions'), list)
+            or not isinstance(value.get('meta'), dict)):
+        raise CatalogUnavailable('catalog_invalid')
+    with _projection_lock:
+        if _projection['source'] is not value['sessions']:
+            _projection.update(source=value['sessions'], sessions=_project_sessions(value['sessions']))
+        sessions = _projection['sessions']
     incoming = value['meta']
     meta = {key: incoming.get(key) if isinstance(incoming.get(key), str) else None
             for key in ('generated_at', 'catalog_observed_at', 'source', 'source_kind', 'content_language', 'requested_locale')}
@@ -206,7 +225,42 @@ def project_catalog(value):
                 taxonomy=copy.deepcopy(TAXONOMY), classification_version=CLASSIFICATION_VERSION)
     if meta['stale']:
         meta['error'] = incoming.get('error') if incoming.get('error') in {'official_sign_in_required', 'official_event_access_required', 'official_rate_limited', 'catalog_unavailable'} else 'upstream_stale'
+    # Data age and background refresh state, so the UI can say how old the agenda is.
+    meta['received_at'] = incoming.get('received_at') if isinstance(incoming.get('received_at'), str) else None
+    meta['refreshing'] = incoming.get('refreshing') is True
+    sync = incoming.get('sync') if isinstance(incoming.get('sync'), dict) else {}
+    meta['sync'] = {'phase': sync.get('phase') if sync.get('phase') in ('idle', 'syncing', 'ready', 'error') else 'idle',
+                    **{key: sync[key] if type(sync.get(key)) is int and sync[key] >= 0 else 0
+                       for key in ('pages', 'collected')}}
     return {'version': 1, 'meta': meta, 'sessions': sessions}
+
+
+def accepts_gzip(header):
+    """True when an Accept-Encoding value allows gzip (q=0 refuses it)."""
+    for part in (header or '').split(','):
+        name, _, params = part.partition(';')
+        if name.strip().lower() == 'gzip':
+            for param in params.split(';'):
+                key, _, value = param.strip().partition('=')
+                if key.lower() == 'q':
+                    try:
+                        return float(value) > 0
+                    except ValueError:
+                        return False
+            return True
+    return False
+
+
+def catalog_body(payload, use_gzip):
+    """JSON bytes for /api/catalog; the last body (and its gzip) is reused while nothing changed."""
+    meta = json.dumps(payload['meta'], ensure_ascii=False, separators=(',', ':'))
+    with _projection_lock:
+        if _body['source'] is not payload['sessions'] or _body['meta'] != meta:
+            raw = json.dumps(payload, ensure_ascii=False, separators=(',', ':')).encode()
+            _body.update(source=payload['sessions'], meta=meta, raw=raw, gzip=None)
+        if use_gzip and _body['gzip'] is None:
+            _body['gzip'] = gzip.compress(_body['raw'], 1, mtime=0)  # loopback only: the fastest level
+        return _body['gzip'] if use_gzip else _body['raw']
 
 
 class SpatialHandler(BaseHTTPRequestHandler):
@@ -268,7 +322,10 @@ class SpatialHandler(BaseHTTPRequestHandler):
                                     'official_schedule_writes': False})
         if parsed.path == '/api/catalog':
             try:
-                return self._json(200, project_catalog(self.server.connection.snapshot()))
+                payload = project_catalog(self.server.connection.snapshot())
+                use_gzip = accepts_gzip(self.headers.get('Accept-Encoding'))
+                headers = {'Vary': 'Accept-Encoding', **({'Content-Encoding': 'gzip'} if use_gzip else {})}
+                return self._respond(200, catalog_body(payload, use_gzip), extra_headers=headers)
             except (OfficialCatalogUnavailable, CatalogUnavailable) as error:
                 code = getattr(error, 'code', str(error))
                 code = {'official_sign_in_required': 'sign_in_required',

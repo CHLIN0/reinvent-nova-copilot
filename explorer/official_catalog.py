@@ -151,17 +151,26 @@ def normalize_session(item, event_zone, observed_at, verified):
 
 
 class OfficialCatalog:
-    """Atomic paginated catalog cache with a minimum 60-second attempt cooldown.
+    """Atomic paginated catalog cache, served stale-while-revalidate.
+
+    A complete snapshot is returned at once; when it is older than the refresh
+    interval (minimum 60 s between attempts) one background refresh starts.
+    Only a caller with no snapshot yet waits for a read. Snapshots are never
+    changed after they are built, so callers get them without a copy and must
+    not mutate them.
 
     token_provider() supplies the current bearer string or raises. Its exceptions
     are sanitized, and the token exists only for the lifetime of each request.
     transport(path, query, token, timeout) may return (status, headers, bytes)
     for offline tests. No injected response is accepted as official evidence.
+    views maps a name to fn(item, event) -> row: extra projections of the same
+    raw items, built during the same read, so other consumers need no read of
+    their own. snapshot(view=name) serves them.
     """
 
     def __init__(self, token_provider, event_id='reinvent2026', *, locale='en-US',
                  refresh_seconds=MIN_REFRESH_SECONDS, transport=None,
-                 clock=time.monotonic, now=None):
+                 clock=time.monotonic, now=None, views=None):
         if (not isinstance(event_id, str) or not 1 <= len(event_id) <= 128
                 or any(ord(char) < 33 for char in event_id)):
             raise ValueError('invalid_event_id')
@@ -180,8 +189,12 @@ class OfficialCatalog:
         self._path = '/v1/events/' + quote(event_id, safe='')
         self._opener = build_opener(ProxyHandler({}), _NoRedirect())
         self._lock = threading.Lock()
-        self._sync_lock = threading.Lock()
+        self._done = threading.Condition(self._lock)
+        self._view_fns = dict(views or {})
         self._cached = None
+        self._views = {}
+        self._refreshing = None  # generation of the refresh in flight, or None
+        self._refreshes = 0
         self._attempted = float('-inf')
         self._retry_seconds = self.refresh_seconds
         self._received_at = None
@@ -312,6 +325,7 @@ class OfficialCatalog:
             raise OfficialCatalogUnavailable('catalog_invalid')
         event_zone = event.get('timezone', 'America/Los_Angeles')
         rows, seen_ids, seen_tokens = [], set(), set()
+        views = {name: [] for name in self._view_fns}
         page_token, total, language = None, None, None
         pages = 0
         observed_at = self._now()
@@ -349,6 +363,11 @@ class OfficialCatalog:
                     raise OfficialCatalogUnavailable('catalog_duplicate_session')
                 seen_ids.add(row['session_id'])
                 rows.append(row)
+                for name, project in self._view_fns.items():
+                    try:
+                        views[name].append(project(item, event))
+                    except Exception:
+                        raise OfficialCatalogUnavailable('catalog_invalid') from None
             with self._lock:
                 if generation != self._generation:
                     raise OfficialCatalogUnavailable('catalog_refresh_superseded')
@@ -365,7 +384,7 @@ class OfficialCatalog:
         if len(rows) != total:
             raise OfficialCatalogUnavailable('catalog_incomplete')
         completed_at = self._now()
-        return {'version': 1, 'sessions': rows, 'meta': {
+        return views, {'version': 1, 'sessions': rows, 'meta': {
             'source': SOURCE, 'source_kind': 'official_http' if self._verified_transport else 'injected_transport',
             'event_id': self.event_id, 'generated_at': completed_at,
             'catalog_observed_at': completed_at, 'stale': False,
@@ -378,59 +397,89 @@ class OfficialCatalog:
             'pages': pages, 'complete': True,
         }}
 
-    def snapshot(self):
-        with self._sync_lock:
-            # Cached event content remains protected. Check the current auth
-            # provider even inside the refresh cooldown and never serve a prior
-            # catalog after a revoked/expired connection.
-            try:
-                self._token()
-            except OfficialCatalogUnavailable as error:
-                with self._lock:
-                    self._error = error.code
-                    self._attempted = self._clock()
-                    self._retry_seconds = max(self.refresh_seconds, error.retry_after or 0)
+    def snapshot(self, view=None):
+        """The last complete snapshot (or one of its views) plus meta, never a copy.
+
+        meta adds received_at, refreshing and sync progress. Waits for a read
+        only when no snapshot exists yet; otherwise a due refresh runs in the
+        background and the current snapshot is returned at once.
+        """
+        # Cached event content remains protected. Check the current auth
+        # provider on every call and never serve a prior catalog after a
+        # revoked/expired connection.
+        try:
+            self._token()
+        except OfficialCatalogUnavailable as error:
+            with self._lock:
+                self._error = error.code
+                self._attempted = self._clock()
+                self._retry_seconds = max(self.refresh_seconds, error.retry_after or 0)
+                self._progress['phase'] = 'error'
+            raise
+        inline = False
+        with self._lock:
+            generation = self._generation
+            if (self._refreshing != generation
+                    and self._clock() - self._attempted >= self._retry_seconds):
+                self._refreshing = generation
+                self._refreshes += 1
+                self._progress = {'phase': 'syncing', 'pages': 0, 'collected': 0}
+                inline = self._cached is None
+                if not inline:
+                    threading.Thread(target=self._refresh, args=(generation,), daemon=True).start()
+        if inline:
+            self._refresh(generation)
+        with self._lock:
+            deadline = time.monotonic() + SYNC_TIMEOUT + REQUEST_TIMEOUT
+            while (self._cached is None and generation == self._generation
+                   and self._refreshing == generation):
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise OfficialCatalogUnavailable('catalog_timeout')
+                self._done.wait(remaining)
+            if generation != self._generation:
+                raise OfficialCatalogUnavailable('catalog_refresh_superseded')
+            if self._error in ('official_sign_in_required', 'official_event_access_required'):
+                raise OfficialCatalogUnavailable(self._error)
+            if self._cached is None:
+                raise OfficialCatalogUnavailable(
+                    self._error or 'catalog_unavailable',
+                    retry_after=max(0, self._retry_seconds - (self._clock() - self._attempted)))
+            meta = dict(self._cached['meta'], received_at=self._received_at,
+                        refreshing=self._refreshing == generation, sync=dict(self._progress))
+            if self._error:
+                meta.update(stale=True, error=self._error)
+            sessions = self._cached['sessions'] if view is None else self._views[view]
+            return {'version': 1, 'sessions': sessions, 'meta': meta}
+
+    def _refresh(self, generation):
+        try:
+            views, snapshot = self._read(generation)
+            with self._lock:
+                if generation == self._generation:
+                    self._cached = snapshot
+                    self._views = views
+                    self._revision += 1
+                    self._received_at = self._now()
+                    self._error = None
+                    self._retry_seconds = self.refresh_seconds
+                    self._progress['phase'] = 'ready'
+        except Exception as error:
+            # A background refresh has no caller to raise to; record a fixed code only.
+            code = error.code if isinstance(error, OfficialCatalogUnavailable) else 'catalog_unavailable'
+            retry_after = getattr(error, 'retry_after', None) or 0
+            with self._lock:
+                if generation == self._generation:
+                    self._error = code
+                    self._retry_seconds = max(self.refresh_seconds, retry_after)
                     self._progress['phase'] = 'error'
-                raise
+        finally:
             with self._lock:
-                due = self._clock() - self._attempted >= self._retry_seconds
-                generation = self._generation
-                if due:
-                    self._progress = {'phase': 'syncing', 'pages': 0, 'collected': 0}
-            if due:
-                try:
-                    snapshot = self._read(generation)
-                    with self._lock:
-                        if generation == self._generation:
-                            self._cached = snapshot
-                            self._revision += 1
-                            self._received_at = self._now()
-                            self._error = None
-                            self._retry_seconds = self.refresh_seconds
-                            self._progress['phase'] = 'ready'
-                except OfficialCatalogUnavailable as error:
-                    with self._lock:
-                        if generation == self._generation:
-                            self._error = str(error)
-                            self._retry_seconds = max(self.refresh_seconds, error.retry_after or 0)
-                            self._progress['phase'] = 'error'
-                finally:
-                    with self._lock:
-                        if generation == self._generation:
-                            self._attempted = self._clock()
-            with self._lock:
-                if generation != self._generation:
-                    raise OfficialCatalogUnavailable('catalog_refresh_superseded')
-                if self._error in ('official_sign_in_required', 'official_event_access_required'):
-                    raise OfficialCatalogUnavailable(self._error)
-                if self._cached is None:
-                    raise OfficialCatalogUnavailable(
-                        self._error or 'catalog_unavailable',
-                        retry_after=max(0, self._retry_seconds - (self._clock() - self._attempted)))
-                result = copy.deepcopy(self._cached)
-                if self._error:
-                    result['meta'].update(stale=True, error=self._error)
-                return result
+                if generation == self._generation:
+                    self._attempted = self._clock()
+                if self._refreshing == generation:
+                    self._refreshing = None
+                self._done.notify_all()
 
     def invalidate(self, clear=False):
         """Refresh immediately; completed sign-in must use clear=True for identity changes.
@@ -442,8 +491,10 @@ class OfficialCatalog:
             self._attempted = float('-inf')
             self._generation += 1
             self._retry_seconds = self.refresh_seconds
+            self._done.notify_all()
             if clear:
                 self._cached = None
+                self._views = {}
                 self._received_at = None
                 self._error = None
                 self._last_query = None
@@ -454,6 +505,7 @@ class OfficialCatalog:
             return {'available': self._cached is not None, 'stale': bool(self._error),
                     'received_at': self._received_at, 'refresh_seconds': self.refresh_seconds,
                     'retry_seconds': self._retry_seconds, 'error': self._error,
+                    'refreshing': self._refreshing == self._generation, 'refreshes': self._refreshes,
                     'source': SOURCE,
                     'source_kind': 'official_http' if self._verified_transport else 'injected_transport',
                     'last_query': copy.deepcopy(self._last_query),
