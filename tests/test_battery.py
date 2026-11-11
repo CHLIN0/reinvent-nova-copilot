@@ -321,6 +321,28 @@ class Battery(Base):
             self.assertEqual(r["inferenceConfig"]["temperature"], 0)
             self.assertEqual(r["additionalModelRequestFields"], {"inferenceConfig": {"topK": 1}})
 
+    def test_briefing_states_a_schedule_change_only_when_there_is_one(self):
+        """T9a round 3: the first briefing after a restart stated an empty diff as a change, and that prompt failed
+        every replay with "invalid sequence as part of ToolUse"; without the empty diff it passed."""
+        def prompt_for(reserved):
+            sched = {"signed_in": True, "favorites": [],
+                     "reserved": [{"id": i, "code": i, "start": "2026-12-02T08:00:00-08:00"} for i in reserved]}
+            with mock.patch.object(web, "_my_schedule", return_value=sched), fixture_catalog():
+                self.fake = FakeBedrock([final("Welcome.")])
+                web._state["agent"] = Agent(client=self.fake, backend=self.be)
+                out = web._briefing()
+            return self.fake.requests[0]["messages"][-1]["content"][0]["text"], out
+
+        prompt, out = prompt_for(["syn-k002"])  # first visit: records the schedule
+        self.assertIn("This is my first visit.", prompt)
+        prompt, out = prompt_for(["syn-k002"])  # nothing changed since
+        self.assertNotIn("schedule changed", prompt)
+        self.assertNotIn('"added": []', prompt)
+        self.assertEqual(out["schedule_diff"], {"reserved": {"added": [], "removed": []},
+                                                "favorites": {"added": [], "removed": []}})  # the panel still gets it
+        prompt, out = prompt_for(["syn-k002", "syn-0007"])  # a reservation was added
+        self.assertIn('Since my last visit my official schedule changed: {"reserved": {"added": ["syn-0007"], "removed": []}', prompt)
+
     def test_briefing_asks_for_the_hotel_when_everything_is_missing(self):
         prompt = self.briefing_prompt({})
         self.assertIn("My profile does not yet say my hotel. ", prompt)

@@ -228,8 +228,11 @@ def _briefing() -> dict:
            f"to {_when(m['to'])}, {m['to']['room']}, {m['to']['venue']}. " for m in (changes or {}).get("moved", [])] \
         + [f"My reservation {c['code']} is no longer in the official catalog. " for c in (changes or {}).get("cancelled", [])] \
         + [f"My profile does not yet say {ask}. " if ask else "My profile has what you need for planning. "]
+    # Only a real change is stated: an empty diff in the prompt ("changed: {...: []}") sent Nova Pro into a runaway
+    # tool call on every first briefing after a restart ("invalid sequence as part of ToolUse", T9a round 3 replay).
+    changed = diff if diff and any(v["added"] or v["removed"] for v in diff.values()) else None
     prompt = ("Brief me as I open the app (this is not a new question). Call get_profile and get_my_schedule. "
-              + ("This is my first visit. " if first_visit else f"Since my last visit my official schedule changed: {json.dumps(diff)}. " if diff else "")
+              + ("This is my first visit. " if first_visit else f"Since my last visit my official schedule changed: {json.dumps(changed)}. " if changed else "")
               + "".join(facts)
               + (f"Before saying anything about feasibility, call check_itinerary once per conference day with these reserved session ids: {checks}. "
                  if checks else "Do not claim any schedule is feasible unless check_itinerary or plan_itinerary confirmed it. ")
