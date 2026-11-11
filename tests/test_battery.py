@@ -286,6 +286,104 @@ class Battery(Base):
         self.assertEqual(out["catalog_diff"]["recommended"], ["SYN-SEC999"])
         self.assertEqual([m["code"] for m in out["catalog_diff"]["moved"]], ["SYN-AI407"])
 
+    # T9a (matrix A3): the briefing names at most one missing profile item, chosen in code ------------
+    PLANNING = {"hotel": "Park MGM", "max_steps_per_day": 8000, "arrival": "Sun 2026-11-29", "departure": "Fri 2026-12-04",
+                "interests": ["security"], "role": "developer", "experience_level": "300", "transport": ["walk"]}
+    ITEMS = ("my hotel", "walking limit", "arrival", "departure", "topics I am interested in", "job role",
+             "experience level", "get around")
+
+    def briefing_prompt(self, saved):
+        if saved:
+            profile.update_profile(saved)
+        mock.patch.object(web, "_my_schedule", return_value={"signed_in": False}).start()
+        self.fake = FakeBedrock([tool_use("get_profile", {}, "p"), final("Welcome.")])
+        web._state["agent"] = Agent(client=self.fake, backend=self.be)
+        web._briefing()
+        self.assertEqual(self.fake.requests[0]["toolConfig"]["toolChoice"], {"any": {}})  # the briefing is forced too
+        prompt = self.fake.requests[0]["messages"][-1]["content"][0]["text"]
+        self.assertLessEqual(prompt.count("does not yet say"), 1, prompt)
+        rest = re.sub(r"My profile does not yet say [^.]*\. ", "", prompt)  # the one named item, if any
+        for item in self.ITEMS:  # no other profile item is named anywhere else in the prompt
+            self.assertNotIn(item, rest, prompt)
+        return prompt
+
+    def test_briefing_and_the_next_chat_turn_are_forced_and_greedy(self):
+        """T9a round 2: the briefing's intermittent ModelErrorException ("invalid sequence as part of ToolUse") also
+        happened on main without T9a and without forcing; the fix is greedy decoding, and forcing stays on."""
+        mock.patch.object(web, "_my_schedule", return_value={"signed_in": False}).start()
+        self.fake = FakeBedrock([tool_use("get_profile", {}, "p"), final("Welcome."),
+                                 tool_use("get_session", {"session_id": "SYN-GEN205"}, "g"), final("SYN-GEN205 is a chalk talk.")])
+        web._state["agent"] = Agent(client=self.fake, backend=self.be)
+        web._briefing()
+        web._chat("Tell me about SYN-GEN205.", allow_write=False)
+        self.assertEqual([r["toolConfig"].get("toolChoice") for r in self.fake.requests], [{"any": {}}, None, {"any": {}}, None])
+        for r in self.fake.requests:
+            self.assertEqual(r["inferenceConfig"]["temperature"], 0)
+            self.assertEqual(r["additionalModelRequestFields"], {"inferenceConfig": {"topK": 1}})
+
+    def test_briefing_asks_for_the_hotel_when_everything_is_missing(self):
+        prompt = self.briefing_prompt({})
+        self.assertIn("My profile does not yet say my hotel. ", prompt)
+        self.assertIn("ask me for that one missing profile detail in one short line", prompt)
+
+    def test_briefing_asks_for_the_hotel_when_only_the_hotel_is_missing(self):
+        prompt = self.briefing_prompt({k: v for k, v in self.PLANNING.items() if k != "hotel"})
+        self.assertIn("My profile does not yet say my hotel. ", prompt)
+
+    def test_briefing_priority_after_the_hotel(self):
+        self.assertIn("My profile does not yet say my daily walking limit. ", self.briefing_prompt({"hotel": "Wynn"}))
+        prompt = self.briefing_prompt({"hotel": "Wynn", "max_steps_per_day": 9000})
+        self.assertIn("My profile does not yet say my arrival and departure dates. ", prompt)
+        prompt = self.briefing_prompt({"arrival": "Sun"})
+        self.assertIn("My profile does not yet say my departure date. ", prompt)
+
+    def test_briefing_with_a_complete_planning_profile_asks_nothing(self):
+        prompt = self.briefing_prompt(self.PLANNING)  # name, diet, language etc. stay empty: not planning details
+        self.assertNotIn("does not yet say", prompt)
+        self.assertIn("My profile has what you need for planning. ", prompt)
+        self.assertIn("3) ask me nothing about my profile.", prompt)
+
+    def test_get_profile_tool_names_one_missing_planning_item(self):
+        """Live: "thanks" (forced to call a tool) called get_profile and Nova read back every empty field."""
+        out, ok = tools.dispatch("get_profile", {}, self.be)
+        self.assertTrue(ok)
+        self.assertEqual(out["missing"], ["hotel"])
+        saved, ok = tools.dispatch("update_profile", {"updates": {"hotel": "Wynn"}}, self.be)
+        self.assertTrue(ok, saved)
+        self.assertEqual(saved["missing"], ["max_steps_per_day"])  # live: the save result was read back in full too
+        self.assertEqual(tools.dispatch("get_profile", {}, self.be)[0]["missing"], ["max_steps_per_day"])
+        profile.update_profile(self.PLANNING)
+        self.assertEqual(tools.dispatch("get_profile", {}, self.be)[0]["missing"], [])
+        self.assertIn("diet", profile.load_profile()["missing"])  # the profile API still lists every empty field
+
+    # T9a (matrix A4): a two-part question, travel feasibility plus a plan of the day ---------------
+    def test_travel_and_plan_the_day(self):
+        q = "I'm at the Wynn after SYN-AI407. Can I reach SYN-GEN101 at Caesars Forum by 12:00 if I leave at 11:30, and plan the rest of my Wednesday?"
+        route_args = {"from_venue": "wynn", "to_venue": "caesars_forum", "depart_at": "Wed 11:30"}
+        plan_args = {"candidate_ids": WED_ALL, "must": ["syn-0011"], "day": "Wed"}
+        route, ok = tools.dispatch("route_between", route_args, self.be)
+        self.assertTrue(ok, route)
+        plan, ok = tools.dispatch("plan_itinerary", plan_args, self.be)
+        self.assertTrue(ok, plan)
+        minutes = route["route"]["minutes"]
+        chosen = plan["plan"]["chosen"]
+        raw = (f"Yes, leaving the Wynn at 11:30 gets you to Caesars Forum in about {minutes:.0f} minutes, before SYN-GEN101 starts at 12:00.\n"
+               + "\n".join(f"{c['start'][11:16]}-{c['end'][11:16]} {c['code']} {c['title']}" for c in chosen)
+               + "\nTravel times are estimates. Next, reserve SYN-GEN101.")
+        out = self.chat(q, [tool_use("route_between", route_args, "r"), tool_use("plan_itinerary", plan_args, "a"), final(raw)])
+        self.assertEqual(self.fake.requests[0]["toolConfig"]["toolChoice"], {"any": {}})
+        self.assertNotIn("toolChoice", self.fake.requests[1]["toolConfig"])
+        self.assertEqual([(c["name"], c["ok"]) for c in out["trace"]], [("route_between", True), ("plan_itinerary", True)])
+        text = out["text"]
+        self.assertPanel(text)
+        self.assertRegex(first_sentence(text), rf"^Yes\b.*about {minutes:.0f} minutes")  # part 1: travel
+        self.assertIn("SYN-GEN101", [c["code"] for c in chosen])
+        for c in chosen:  # part 2: the plan of the day, one line per chosen session
+            self.assertIn(f"{c['start'][11:16]}-{c['end'][11:16]} {c['code']}", text)
+        specs = {s["name"]: s["description"] for s in tools.TOOL_SPECS}  # the fix lives in the tool descriptions
+        self.assertIn("call plan_itinerary as well", specs["route_between"])
+        self.assertIn("call route_between as well", specs["plan_itinerary"])
+
     # prompt -------------------------------------------------------------------------------------
     def test_prompt_carries_the_panel_rules(self):
         """The system prompt sent to Bedrock carries the T4 rules and the language rule."""

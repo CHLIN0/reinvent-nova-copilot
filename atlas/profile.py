@@ -49,6 +49,8 @@ FIELDS: dict[str, str] = {
     "language": "Preferred language for answers.",
 }
 _LIST_FIELDS = {"interests", "goals", "transport", "fixed_commitments", "special_arrangements"}
+# Planning details in the order worth asking for them (web.py's briefing follows the same order).
+PLANNING_PRIORITY = ("hotel", "max_steps_per_day", "arrival", "departure", "interests", "role", "experience_level", "transport")
 
 
 def _safe_name(name: str | None) -> str:

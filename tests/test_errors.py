@@ -139,6 +139,38 @@ class ErrorRouteTests(unittest.TestCase):
             self.assert_failure(self.call("/api/translate/s-1?lang=zh-Hant"), 503, "model_unavailable",
                                 "ClientError")
 
+    def test_bedrock_model_error_message_is_logged_without_tokens(self):
+        """T9a round 2: ModelErrorException / ValidationException log Bedrock's message (300 chars, tokens redacted)."""
+        token = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.c2lnbmF0dXJlLXZhbHVlLWhlcmU"
+        text = f"Model produced invalid sequence as part of ToolUse. Bearer {token} " + "x " * 300
+        for code in ("ModelErrorException", "ValidationException"):
+            err = ClientError({"Error": {"Code": code, "Message": text}}, "Converse")
+            with self.subTest(code=code), mock.patch.object(web, "_briefing", side_effect=err):
+                status, body, log = self.call("/api/briefing", {})
+            self.assertEqual((status, body.get("error")), (503, "model_unavailable"))
+            line = next(l for l in log.splitlines() if l.startswith("bedrock-message briefing: "))
+            self.assertIn("Model produced invalid sequence as part of ToolUse.", line)
+            self.assertNotIn(token, log)
+            self.assertNotIn("eyJ", log)
+            self.assertIn("[redacted]", line)
+            self.assertLessEqual(len(line), len("bedrock-message briefing: ") + 300)
+            self.assertNotIn("invalid sequence", json.dumps(body))
+        with mock.patch.object(web, "_briefing", side_effect=bedrock("ThrottlingException")):
+            log = self.call("/api/briefing", {})[2]
+        self.assertNotIn("bedrock-message", log)  # other codes: class and code only
+
+    def test_bedrock_message_token_across_the_300_character_cut_is_redacted(self):
+        """Codex review r1 (P1): truncating before redacting left the token's first characters in the log."""
+        token = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789"
+        for start in (276, 285, 292, 299):
+            text = ("ab " * 100)[:start - 1].ljust(start - 1, "a") + " " + token + " tail"  # short words: not token-like
+            err = ClientError({"Error": {"Code": "ModelErrorException", "Message": text}}, "Converse")
+            with self.subTest(start=start), mock.patch.object(web, "_briefing", side_effect=err):
+                log = self.call("/api/briefing", {})[2]
+                line = next(l for l in log.splitlines() if l.startswith("bedrock-message briefing: "))
+                self.assertNotIn(token[:5], line)
+                self.assertLessEqual(len(line), len("bedrock-message briefing: ") + 300)
+
     def test_unknown_errors_are_server_error(self):
         with mock.patch.object(web, "_chat", side_effect=RuntimeError(SECRET)):
             self.assert_failure(self.call("/api/chat", {"message": "hi"}), 500, "server_error", "RuntimeError")
