@@ -105,3 +105,6 @@ What changes on the first briefing after sign-in (from the code; unverified as t
 - [ ] all tests green; replaying the captured request on the fixed code passes 5 of 5
 - [ ] blind review `VERDICT: MERGE` (Codex `review` profile if its quota allows, else a fresh Claude Sonnet subagent)
 - [ ] commit on `t9a-first-briefing`; do not push (the host pushes, opens the PR and checks the first briefing after a restart on BR's account)
+
+### Host decision after two review rounds (2026-11-11)
+The capture (scope 1) did its job: the replay found the cause. Both rounds of review on `t9a-first-briefing` returned only P1s on the capture's redaction rules, never on the fix. **Round 3 ships the root-cause fix alone**, on branch `t9a-empty-diff`: the briefing states a schedule change only when something was added or removed, with a test. The capture code is **not** part of this delivery and stays unpushed on `t9a-first-briefing`. The round-2 `bedrock-message` stderr line remains for diagnosis. For this delivery, scope 1, 2 and 5's capture test and the first Done-when line are void. The replay of the captured request (3 of 3 on the fixed code) and the host's live check of the first briefing after a restart replace them.
