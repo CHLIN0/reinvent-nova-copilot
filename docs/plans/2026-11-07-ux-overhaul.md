@@ -135,6 +135,11 @@ BR asked for a best-practice fix for the remaining briefing failure and a faster
   - Grayed-out cards explain themselves.
   - Measured against LCP ≤ 2.5 s, CLS ≤ 0.1, INP ≤ 200 ms.
 - **Order:** T11 and T12 run in parallel (no shared files), then T13.
+- **Status 2026-11-11:**
+  - T11 merged (PR #16, c8c67d6). Codex took 3 rounds; the host approved the focused round 3. On BR's account, the first briefing after a restart passed 5 of 5, with 1 Bedrock call of about 1k input tokens.
+  - T12 merged (PR #17, 2d2f2a7). Codex returned MERGE in round 2. On BR's account, after 72 s idle: `/api/catalog` 0.06 s (was 10.4 s), `/api/my-schedule` 1.08 s (was 10.7 s), and the briefing done at 8.4 s (was 23.1 s).
+  - T13 started; its brief has the inputs now on main.
+  - Follow-up noted: the summary and chat sometimes suggest moving or removing an official reserved session (GHJ212).
 
 ## 6. How the work runs
 

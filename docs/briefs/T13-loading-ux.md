@@ -31,6 +31,19 @@ On the signed-in first screen, the attendee always knows what is happening and h
 4. **Explore tab.** While the catalog is loading for the first time, show a skeleton list instead of an empty area.
 5. **Measure.** With the agent browser, trace the signed-in My re:Invent page on a warm server and after 70 s idle. Report LCP, CLS and INP against the web.dev thresholds, before (main) and after.
 
+6. **Fewer `/api/plan` requests.** On BR's account one page load after T12 requests `/api/plan` 4 times, at 1.2–1.5 s each. Load it once per page load and after a change, and share the result between Atlas and the panel.
+7. **Trace wording.** T11 marks the briefing's calls with `"by": "server"`. Show them as checks the server ran (for example 「伺服器已檢查 4 天的行程」), not as "N tool call(s)" that Nova made. Chat traces keep their current wording.
+
+## Inputs on main (2026-11-11, after PR #16 and #17)
+- **`/api/briefing`** returns:
+  - `text`: Nova's summary, or the code-written briefing;
+  - `facts`: a list of the code-written lines;
+  - `trace`: each entry carries `"by": "server"`;
+  - `schedule_diff`, `catalog_diff`, `first_visit`;
+  - when Nova failed, also `error: "model_unavailable"` and `message`.
+- **`/api/catalog` `meta`** and **`/api/health` `public_cache`** carry `received_at`, `refreshing`, `refreshes`, `stale`, and `sync: {phase, pages, collected}`.
+- **Measured on BR's account after 72 s idle:** `/api/catalog` 0.06 s; `/api/my-schedule` 1.08 s; the briefing returns at 8.4 s (one Nova request, about 7 s). The briefing area is now the longest wait on the first screen.
+
 ## Tests
 - Node tests for the header status texts from `meta` (syncing, ready, refreshing), the venue placeholder, and the briefing area's fixed height and collapse.
 - Rebuild `explorer/ui/dist` with `node build.mjs`.
