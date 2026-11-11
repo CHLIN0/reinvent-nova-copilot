@@ -1,0 +1,50 @@
+# T13: The first screen says what is loading, keeps its place, and shows the facts first
+
+- Change class: D (Event Atlas UI and Copilot panel)
+- Branch: t13-loading-ux   Base: main **after T11 and T12 are merged** (it uses T12's `meta` fields and T11's briefing shape)
+- Builder: Claude Code, Opus 5.5   Blind reviewer: Codex `review` profile; a fresh Claude Sonnet subagent only if Codex is unavailable
+
+## Goal
+On the signed-in first screen, the attendee always knows what is happening and how fresh the data is. The schedule never jumps when the briefing arrives. The facts the server already knows appear before Nova's summary.
+
+## Why (host screenshots on BR's account, 2026-11-11, cold load)
+- **0–11 s.** BR's sessions are visible but grayed out, with venue names missing. The header says only 「確認官方連線…」, with no progress and no reason.
+- **0–23 s.** The briefing area shows one line, "Welcome back. Nova Pro is checking your official schedule and profile…".
+- **When the briefing arrives**, a tall block is inserted above the schedule and pushes it down (layout shift).
+- **Best practice:**
+  - NN/g "Skeleton Screens 101" (2023): skeletons for full-page loads under 10 s, progress for longer waits.
+  - NN/g response-time limits: 0.1 s, 1 s and 10 s.
+  - web.dev Core Web Vitals: LCP ≤ 2.5 s, CLS ≤ 0.1, INP ≤ 200 ms.
+
+## Scope
+1. **Catalog status in the header** (`explorer/ui/src/app.mjs` and `official-connection.mjs`), from T12's `meta`:
+   - first sync: 「同步官方議程 4/11 頁」;
+   - ready: 「2,516 場 · 更新於 HH:MM」;
+   - serving a snapshot while refreshing: 「顯示 HH:MM 的資料 · 背景更新中」.
+
+   Use the existing `/api/health` sync progress. Poll only while syncing, at most once a second.
+2. **Grayed-out sessions explain themselves.** While the catalog is missing, cards from the plan keep their time and code and show a short 「載入場館…」 where the venue goes. Nothing else changes.
+3. **The briefing keeps its place.**
+   - It gets a fixed-height area with skeleton lines while waiting, so no layout shift.
+   - The code-written facts from T11 (since-last-visit line and per-day check results) show as soon as `/api/briefing` returns them. Nova's summary fills in the same area.
+   - A long briefing is collapsed to its first lines, with 「展開」, so the day's schedule stays on the first screen at 1280×800.
+4. **Explore tab.** While the catalog is loading for the first time, show a skeleton list instead of an empty area.
+5. **Measure.** With the agent browser, trace the signed-in My re:Invent page on a warm server and after 70 s idle. Report LCP, CLS and INP against the web.dev thresholds, before (main) and after.
+
+## Tests
+- Node tests for the header status texts from `meta` (syncing, ready, refreshing), the venue placeholder, and the briefing area's fixed height and collapse.
+- Rebuild `explorer/ui/dist` with `node build.mjs`.
+- Screenshots (synthetic or dev data) at 2 s and when ready, before and after, at 1280×800 and 390×844.
+
+## Done when
+- [ ] tests green; node tests that passed on main still pass
+- [ ] trace numbers before and after (LCP, CLS, INP)
+- [ ] screenshots
+- [ ] blind review `VERDICT: MERGE`, at most 2 rounds
+- [ ] commit on `t13-loading-ux`; do not push
+
+## Must not
+- change server code (T11 and T12 own it); if a field is missing, report it to the host
+- restyle beyond the loading states; remove the five-day view; add animations other than a skeleton shimmer that respects `prefers-reduced-motion`
+- touch the 3D map
+- push, open a PR or merge

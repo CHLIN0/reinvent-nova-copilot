@@ -118,6 +118,24 @@ M0 first (T0+T1+T2 → T3+T4+T5+T10 → T6+T7+T8 → T9). The three spikes (M2a,
 - Status 2026-11-11: T9b merged (PR #11: ledger isolation via `ATLAS_COSTS_LEDGER` and `tests/__init__.py`, error codes with one plain sentence in the panel and Atlas, GitHub Actions CI, PR template, `mcp<2` pin because mcp 2.x dropped FastMCP) and T9a merged (PR #12: `toolChoice: any` with read tools only on the first request of every turn; one profile question chosen in code). Both: Sonnet blind review MERGE, CI green; Codex cloud review is connected but out of usage, so no bot review. Host check on BR's account: the briefing asks one question (arrival date); the Tuesday question now calls tools with official times but plans Wednesday (`day: 2026-12-02` for 週二 and for "Tuesday", 2/2). Next: T9c (`docs/briefs/T9c-weekday-resolution.md`), weekday words resolved to dates in code. Known limits carried: two-part questions are answered but plans are built without `plan_itinerary`; "no walking limit" cannot be saved.
 - 2026-11-11 later: on BR's account the signed-in briefing failed with `ModelErrorException` 3 of 3 times on main (T9a+T9b) and 2 of 2 on the T9c branch, while pre-T9 `a0dd70b` briefed normally on the same data. Host reverted the T9a merge (9196f04, CI green, briefing verified working again on 8500). Leading suspect: the forced `toolChoice: any` on the briefing's first request; the exact Bedrock message was not captured because the server logs only the class. T9c's own fix worked live (週二 planned on 2026-12-01 with GHJ212 12:00–14:00 and GHJ301-S), but PR #13 carries T9a and is back in draft. After the quota reset: T9a builder reproduces with the full error message and fixes; T9c is rebased onto the result.
 
+### Wave 6 · Reliability and speed (proposed 2026-11-11, waits for BR's 開始)
+BR asked for a best-practice fix for the remaining briefing failure and a faster agenda load, with UI/UX in scope. Measurements, sources and decisions are in `docs/research/2026-11-11-briefing-and-loading.md`.
+- **T11 · Briefing as a workflow** (`docs/briefs/T11-briefing-as-workflow.md`, class C).
+  - The server runs `get_profile`, the schedule and `check_itinerary` for each reserved day.
+  - Nova gets one request with no tools and writes the summary; if it fails, a briefing written by code is shown.
+  - This removes the "invalid sequence as part of ToolUse" failure from the briefing, and every reserved day is always checked.
+- **T12 · Catalog stale-while-revalidate** (`docs/briefs/T12-catalog-stale-while-revalidate.md`, class D).
+  - Requests get the last snapshot at once, with at most one background refresh.
+  - Atlas and Copilot share one catalog read.
+  - `get_session` uses an index, and `/api/catalog` is gzipped.
+  - Today a page load after 60 s idle waits about 11 s for 11 sequential official pages.
+- **T13 · Loading UX** (`docs/briefs/T13-loading-ux.md`, class D, after T11 and T12).
+  - The header shows sync progress and how old the data is.
+  - The briefing area has a fixed height with skeletons; facts show before Nova's summary.
+  - Grayed-out cards explain themselves.
+  - Measured against LCP ≤ 2.5 s, CLS ≤ 0.1, INP ≤ 200 ms.
+- **Order:** T11 and T12 run in parallel (no shared files), then T13.
+
 ## 6. How the work runs
 
 1. **Host (this session)**: owns this roadmap and the order; writes one brief per task from this file; starts one session per task in its own worktree, at most three in parallel; verifies acceptance in BR's Chrome before merging; merges sequentially.
