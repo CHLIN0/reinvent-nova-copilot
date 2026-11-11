@@ -227,6 +227,13 @@ def _briefing() -> dict:
 
     got, ok = run("get_profile", {})
     day_lines = [_day_check_line(day, *run("check_itinerary", {"session_ids": ids})) for day, ids in sorted(by_day.items())]
+    # A reservation without a time in the loaded catalog has no day: every check reports it, so it is stated once.
+    unplaced = list(dict.fromkeys(i for c in calls if c["name"] == "check_itinerary" and c["ok"]
+                                  for i in (c["result"].get("reservations_not_applied") or {}).get("ids") or []))
+    if unplaced:
+        code_of = {c["id"]: c["code"] for c in (changes or {}).get("cancelled", []) if c.get("code")}
+        day_lines.append(f"Left out of the travel checks: {', '.join(code_of.get(i, i) for i in unplaced)} "
+                         "(reserved, but without a time in the loaded catalog).")
     # At most one profile question, chosen here: the first planning detail still missing, in profile.PLANNING_PRIORITY order.
     saved = got["fields"] if ok else profile.load_profile()["fields"]
     words = {"hotel": "my hotel", "max_steps_per_day": "my daily walking limit", "arrival": "my arrival date",
@@ -325,10 +332,9 @@ def _day_check_line(day: str, result: dict, ok: bool) -> str:
                          f"plus a {buffer} min buffer")
         elif status == "tight":
             found.append(f"tight transition {a} to {b} ({t.get('travel_minutes')} min of travel, {t.get('slack_minutes')} min to spare)")
-    if unresolved := (result.get("reservations_not_applied") or {}).get("ids"):
-        found.append(f"{len(unresolved)} reservation(s) could not be checked")
     return (f"{label}, {len(rows)} reserved ({', '.join(rows)}): "
-            + ("; ".join(found) if found else "no conflicts or tight transitions") + ".")
+            + ("; ".join(found) if found else "no conflicts or tight transitions"
+               + (" among the sessions checked" if result.get("reservations_not_applied") else "")) + ".")
 
 
 def _since_line(changed: dict | None, changes: dict | None, recommended: list[dict]) -> str:

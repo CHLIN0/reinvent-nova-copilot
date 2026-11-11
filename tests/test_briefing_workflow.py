@@ -122,6 +122,17 @@ class BriefingWorkflowTest(Base):
         self.assertEqual(out["removed"], [])
         self.assertEqual(out["text"], "Wednesday and Thursday have no conflicts; fix Tuesday.")
 
+    def test_a_reservation_without_a_time_is_stated_once(self):
+        """Live smoke: a reservation missing from the catalog has no day, so every day's check reported it."""
+        self.be = fixture_backend({"reserved": RESERVED + ["syn-gone"], "favorites": [], "personalTime": []})
+        out, _ = self.brief(FakeBedrock([final("Wednesday has no conflicts.")]))
+        self.assertEqual(len([c for c in out["trace"] if c["name"] == "check_itinerary"]), 3)
+        left = [line for line in out["facts"] if "syn-gone" in line]
+        self.assertEqual(left, ["Left out of the travel checks: syn-gone (reserved, but without a time in the loaded catalog)."])
+        wed = next(line for line in out["facts"] if line.startswith("Wed"))
+        self.assertTrue(wed.endswith("no conflicts or tight transitions among the sessions checked."), wed)
+        self.assertEqual(out["removed"], ["Wednesday has no conflicts."])  # the guard still treats it as unverified
+
     # T11-3 ---------------------------------------------------------------------------------------
     def test_model_error_returns_the_briefing_written_by_code(self):
         self.brief(FakeBedrock([final("Welcome.")]))  # first visit: records the schedule
