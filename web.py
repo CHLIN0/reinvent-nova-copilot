@@ -314,7 +314,7 @@ BRIEFING_FALLBACK_NOTE = ("Nova's summary is missing right now; these lines come
 
 
 def _saved_profile(fields: dict) -> str:
-    """The saved planning details as short facts. Worded without the names of the profile questions (T9a: only the one
+    """The saved details that shape a plan, as short facts. Worded without the names of the profile questions (T9a: only the one
     question chosen in code may name a missing item)."""
     def text(v):
         return ", ".join(map(str, v)) if isinstance(v, list) else str(v)
@@ -328,7 +328,11 @@ def _saved_profile(fields: dict) -> str:
              f"interests {text(fields['interests'])}" if fields.get("interests") else None,
              f"role {fields['role']}" if fields.get("role") else None,
              f"level {fields['experience_level']}" if fields.get("experience_level") else None,
-             f"transport {text(fields['transport'])}" if fields.get("transport") else None]
+             f"transport {text(fields['transport'])}" if fields.get("transport") else None,
+             f"goals {text(fields['goals'])}" if fields.get("goals") else None,
+             f"mobility {text(fields['mobility'])}" if fields.get("mobility") else None,
+             f"fixed commitments {text(fields['fixed_commitments'])}" if fields.get("fixed_commitments") else None,
+             f"special arrangements {text(fields['special_arrangements'])}" if fields.get("special_arrangements") else None]
     return "; ".join(p for p in parts if p)
 
 
