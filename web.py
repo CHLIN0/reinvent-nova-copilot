@@ -256,14 +256,12 @@ def _briefing() -> dict:
     # Only a real change is stated: an empty diff in the prompt ("changed: {...: []}") sent Nova Pro into a runaway
     # tool call on every first briefing after a restart ("invalid sequence as part of ToolUse", T9a round 3 replay).
     changed = diff if diff and any(v["added"] or v["removed"] for v in diff.values()) else None
-    language = saved.get("language")
     prompt = ("Brief me as I open the app (this is not a new question). "
               + ("This is my first visit. " if first_visit else f"Since my last visit my official schedule changed: {json.dumps(changed)}. " if changed else "")
               + "".join(facts)
               + ("Travel checks between my reserved sessions, one per conference day: " + " ".join(day_lines) + " "
                  if day_lines else "No travel was checked. " if unplaced else "I have no reserved sessions, so no travel was checked. ")
               + (left_out + " " if left_out else "")
-              + (f"Answer in {language}. " if language else "")
               + "In under 120 words: 1) name any "
               + ("moved or cancelled reservation, " if changes and (changes["moved"] or changes["cancelled"]) else "")
               + "conflict or tight transition the checks found, "
@@ -332,7 +330,9 @@ def _saved_profile(fields: dict) -> str:
              f"goals {text(fields['goals'])}" if fields.get("goals") else None,
              f"mobility {text(fields['mobility'])}" if fields.get("mobility") else None,
              f"fixed commitments {text(fields['fixed_commitments'])}" if fields.get("fixed_commitments") else None,
-             f"special arrangements {text(fields['special_arrangements'])}" if fields.get("special_arrangements") else None]
+             f"special arrangements {text(fields['special_arrangements'])}" if fields.get("special_arrangements") else None,
+             f"diet {text(fields['diet'])}" if fields.get("diet") else None,
+             f"preferred language for answers {fields['language']}" if fields.get("language") else None]
     return "; ".join(p for p in parts if p)
 
 

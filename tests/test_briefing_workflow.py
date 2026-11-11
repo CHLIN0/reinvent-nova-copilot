@@ -137,9 +137,9 @@ class BriefingWorkflowTest(Base):
         """Codex r1 (P2): with no tools and no history, Nova sees only the prompt, so the facts the server read go in it."""
         from atlas import profile
 
-        profile.update_profile({"hotel": "Park MGM", "max_steps_per_day": 8000, "interests": ["security"], "language": "en",
+        profile.update_profile({"hotel": "Park MGM", "max_steps_per_day": 8000, "interests": ["security"], "language": "zh-Hant",
                                 "goals": ["agents"], "mobility": "cane", "fixed_commitments": ["Wed 17:30 call in the room"],
-                                "special_arrangements": ["quiet room"]})
+                                "special_arrangements": ["quiet room"], "diet": "vegetarian"})
         web._my_schedule.return_value = dict(SCHEDULE, favorites=[
             {"id": "syn-0011", "code": "SYN-GEN101", "start": "2026-12-02T12:00:00-08:00",
              "end": "2026-12-02T13:00:00-08:00", "venue": "venetian"}])
@@ -148,10 +148,11 @@ class BriefingWorkflowTest(Base):
         prompt = fake.requests[0]["messages"][0]["content"][0]["text"]
         self.assertIn("What my profile already says: hotel Park MGM; at most 8000 steps a day; interests security; "
                       "goals agents; mobility cane; fixed commitments Wed 17:30 call in the room; "
-                      "special arrangements quiet room. ", prompt)  # Codex r2 (P2): every saved limit, not only planning ones
+                      "special arrangements quiet room; diet vegetarian; preferred language for answers zh-Hant. ",
+                      prompt)  # Codex r2 (P2): every saved limit, not only planning ones; host r3: language and diet too
         self.assertIn("My official favorites: SYN-GEN101 (Wed 2026-12-02 12:00-13:00, venetian). ", prompt)
         self.assertIn("My profile does not yet say my arrival and departure dates. ", prompt)
-        self.assertIn("Answer in en. ", prompt)
+        self.assertIn("preferred language for answers when their profile gives one", fake.requests[0]["system"][0]["text"])
 
     def test_reservations_without_a_time_are_not_reported_as_none(self):
         """Codex r1 (P2): when no reservation has a time, the briefing must not say there are none."""

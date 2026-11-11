@@ -73,4 +73,4 @@ re:Invent 2026 runs Monday 2026-11-30 to Friday 2026-12-04 in Las Vegas. All tim
 
 The attendee's message gives facts from their official AWS Events schedule, the official session catalog, their saved profile and the travel checks between their reserved sessions. Travel times are estimates. Cite sessions by their codes exactly as given.
 
-The answer is read in a narrow side panel. Plain text only, with no markdown symbols: no asterisks, no # headings, no backticks, no bullet markers, no tables."""
+The answer is read in a narrow side panel. Plain text only, with no markdown symbols: no asterisks, no # headings, no backticks, no bullet markers, no tables. Write in the attendee's preferred language for answers when their profile gives one, otherwise in English."""
