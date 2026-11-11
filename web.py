@@ -227,13 +227,14 @@ def _briefing() -> dict:
 
     got, ok = run("get_profile", {})
     day_lines = [_day_check_line(day, *run("check_itinerary", {"session_ids": ids})) for day, ids in sorted(by_day.items())]
-    # A reservation without a time in the loaded catalog has no day: every check reports it, so it is stated once.
-    unplaced = list(dict.fromkeys(i for c in calls if c["name"] == "check_itinerary" and c["ok"]
-                                  for i in (c["result"].get("reservations_not_applied") or {}).get("ids") or []))
-    if unplaced:
-        code_of = {c["id"]: c["code"] for c in (changes or {}).get("cancelled", []) if c.get("code")}
-        day_lines.append(f"Left out of the travel checks: {', '.join(code_of.get(i, i) for i in unplaced)} "
-                         "(reserved, but without a time in the loaded catalog).")
+    # A reservation without a time in the loaded catalog has no day: it is left out of the day checks (which all
+    # report it) and stated once, also when no reservation has a time.
+    unplaced = list(dict.fromkeys([r["id"] for r in sched.get("reserved") or [] if not r.get("start")]
+                                  + [i for c in calls if c["name"] == "check_itinerary" and c["ok"]
+                                     for i in (c["result"].get("reservations_not_applied") or {}).get("ids") or []]))
+    code_of = {c["id"]: c["code"] for c in (changes or {}).get("cancelled", []) if c.get("code")}
+    left_out = (f"Left out of the travel checks: {', '.join(code_of.get(i, i) for i in unplaced)} "
+                "(reserved, but without a time in the loaded catalog)." if unplaced else None)
     # At most one profile question, chosen here: the first planning detail still missing, in profile.PLANNING_PRIORITY order.
     saved = got["fields"] if ok else profile.load_profile()["fields"]
     words = {"hotel": "my hotel", "max_steps_per_day": "my daily walking limit", "arrival": "my arrival date",
@@ -248,6 +249,9 @@ def _briefing() -> dict:
         + [f"My reservation {m['code']} moved from {_when(m['from'])}, {m['from']['room']}, {m['from']['venue']} "
            f"to {_when(m['to'])}, {m['to']['room']}, {m['to']['venue']}. " for m in (changes or {}).get("moved", [])] \
         + [f"My reservation {c['code']} is no longer in the official catalog. " for c in (changes or {}).get("cancelled", [])] \
+        + ([f"My official favorites: " + "; ".join(f"{r.get('code') or r['id']} ({_when(r).strip('()')}, {r.get('venue') or ''})"
+                                                   for r in sched["favorites"]) + ". "] if sched.get("favorites") else []) \
+        + ([f"What my profile already says: {_saved_profile(saved)}. "] if _saved_profile(saved) else []) \
         + [f"My profile does not yet say {ask}. " if ask else "My profile has what you need for planning. "]
     # Only a real change is stated: an empty diff in the prompt ("changed: {...: []}") sent Nova Pro into a runaway
     # tool call on every first briefing after a restart ("invalid sequence as part of ToolUse", T9a round 3 replay).
@@ -257,7 +261,8 @@ def _briefing() -> dict:
               + ("This is my first visit. " if first_visit else f"Since my last visit my official schedule changed: {json.dumps(changed)}. " if changed else "")
               + "".join(facts)
               + ("Travel checks between my reserved sessions, one per conference day: " + " ".join(day_lines) + " "
-                 if day_lines else "I have no reserved sessions, so no travel was checked. ")
+                 if day_lines else "No travel was checked. " if unplaced else "I have no reserved sessions, so no travel was checked. ")
+              + (left_out + " " if left_out else "")
               + (f"Answer in {language}. " if language else "")
               + "In under 120 words: 1) name any "
               + ("moved or cancelled reservation, " if changes and (changes["moved"] or changes["cancelled"]) else "")
@@ -270,7 +275,7 @@ def _briefing() -> dict:
     # The panel's facts, written by code: shown with Nova's summary, and on their own when Nova fails.
     since = None if first_visit or diff is None else _since_line(changed, changes, recommended)
     profile_line = f"Your profile does not yet say {_yours(ask)}: tell me in the chat to plan around it." if ask else None
-    facts_out = [line for line in [since, *day_lines, profile_line] if line]
+    facts_out = [line for line in [since, *day_lines, left_out, profile_line] if line]
     trace = [{**c, "confirmed": None, "by": "server"} for c in calls]
     agent = _agent()
     with _state_lock:  # one conversation at a time; Bedrock calls are serialised
@@ -306,6 +311,25 @@ def _briefing() -> dict:
 BRIEFING_MAX_TOKENS = 500
 BRIEFING_FALLBACK_NOTE = ("Nova's summary is missing right now; these lines come straight from your official schedule "
                           "and the travel checks.")
+
+
+def _saved_profile(fields: dict) -> str:
+    """The saved planning details as short facts. Worded without the names of the profile questions (T9a: only the one
+    question chosen in code may name a missing item)."""
+    def text(v):
+        return ", ".join(map(str, v)) if isinstance(v, list) else str(v)
+
+    arrival, departure = fields.get("arrival"), fields.get("departure")
+    stay = (f"here from {arrival} to {departure}" if arrival and departure else
+            f"here from {arrival}" if arrival else f"here until {departure}" if departure else None)
+    parts = [f"hotel {fields['hotel']}" if fields.get("hotel") else None,
+             f"at most {fields['max_steps_per_day']} steps a day" if fields.get("max_steps_per_day") else None,
+             stay,
+             f"interests {text(fields['interests'])}" if fields.get("interests") else None,
+             f"role {fields['role']}" if fields.get("role") else None,
+             f"level {fields['experience_level']}" if fields.get("experience_level") else None,
+             f"transport {text(fields['transport'])}" if fields.get("transport") else None]
+    return "; ".join(p for p in parts if p)
 
 
 def _yours(phrase: str) -> str:

@@ -133,6 +133,36 @@ class BriefingWorkflowTest(Base):
         self.assertTrue(wed.endswith("no conflicts or tight transitions among the sessions checked."), wed)
         self.assertEqual(out["removed"], ["Wednesday has no conflicts."])  # the guard still treats it as unverified
 
+    def test_the_request_carries_the_saved_profile_and_the_favorites(self):
+        """Codex r1 (P2): with no tools and no history, Nova sees only the prompt, so the facts the server read go in it."""
+        from atlas import profile
+
+        profile.update_profile({"hotel": "Park MGM", "max_steps_per_day": 8000, "interests": ["security"], "language": "en"})
+        web._my_schedule.return_value = dict(SCHEDULE, favorites=[
+            {"id": "syn-0011", "code": "SYN-GEN101", "start": "2026-12-02T12:00:00-08:00",
+             "end": "2026-12-02T13:00:00-08:00", "venue": "venetian"}])
+        fake = FakeBedrock([final("Hello.")])
+        self.brief(fake)
+        prompt = fake.requests[0]["messages"][0]["content"][0]["text"]
+        self.assertIn("What my profile already says: hotel Park MGM; at most 8000 steps a day; interests security. ", prompt)
+        self.assertIn("My official favorites: SYN-GEN101 (Wed 2026-12-02 12:00-13:00, venetian). ", prompt)
+        self.assertIn("My profile does not yet say my arrival and departure dates. ", prompt)
+        self.assertIn("Answer in en. ", prompt)
+
+    def test_reservations_without_a_time_are_not_reported_as_none(self):
+        """Codex r1 (P2): when no reservation has a time, the briefing must not say there are none."""
+        web._my_schedule.return_value = dict(SCHEDULE, reserved=[{"id": "syn-gone", "title": "(not in the loaded catalog)"}])
+        fake = FakeBedrock([final("Hello.")])
+        out, _ = self.brief(fake)
+        prompt = fake.requests[0]["messages"][0]["content"][0]["text"]
+        self.assertNotIn("I have no reserved sessions", prompt)
+        line = "Left out of the travel checks: syn-gone (reserved, but without a time in the loaded catalog)."
+        self.assertIn("No travel was checked. " + line, prompt)
+        self.assertIn(line, out["facts"])
+        self.assertEqual([c["name"] for c in out["trace"]], ["get_profile"])
+        out, _ = self.brief(Failing())
+        self.assertIn(line, out["text"])
+
     # T11-3 ---------------------------------------------------------------------------------------
     def test_model_error_returns_the_briefing_written_by_code(self):
         self.brief(FakeBedrock([final("Welcome.")]))  # first visit: records the schedule
