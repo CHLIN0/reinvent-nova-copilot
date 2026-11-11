@@ -70,7 +70,7 @@ Briefing first-after-restart results:
 ## Decisions (host, by best practice)
 1. **T11:** the briefing runs its fixed steps in code, and Nova gets one request with no tools. If that request fails, a briefing written by code is shown. Chat stays agentic and forced. There is no retry loop, because the error is not documented as retryable and the code-written briefing covers the failure.
 2. **T12:** stale-while-revalidate with one shared catalog read; indexed lookups; gzip.
-3. **T13:** status the user can read (sync progress and data age), a fixed briefing area with skeletons, facts before the summary; measured against LCP, CLS and INP.
+3. **T13:** status the user can read (sync progress and data age), a fixed briefing area with skeletons, facts and summary in one response (facts still shown if Nova fails); measured against LCP, CLS and INP.
 4. **Not now:**
    - streaming the summary: after T11 there is one short request, so measure first;
    - a catalog stored on disk for the first load after a restart: sign-in already starts the sync;

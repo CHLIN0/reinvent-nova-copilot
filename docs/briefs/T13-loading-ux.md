@@ -1,11 +1,11 @@
-# T13: The first screen says what is loading, keeps its place, and shows the facts first
+# T13: The first screen says what is loading and keeps its place
 
 - Change class: D (Event Atlas UI and Copilot panel)
 - Branch: t13-loading-ux   Base: main **after T11 and T12 are merged** (it uses T12's `meta` fields and T11's briefing shape)
 - Builder: Claude Code, Opus 5.5   Blind reviewer: Codex `review` profile; a fresh Claude Sonnet subagent only if Codex is unavailable
 
 ## Goal
-On the signed-in first screen, the attendee always knows what is happening and how fresh the data is. The schedule never jumps when the briefing arrives. The facts the server already knows appear before Nova's summary.
+On the signed-in first screen, the attendee always knows what is happening and how fresh the data is. The schedule never jumps when the briefing arrives. When Nova is unavailable, the facts still appear.
 
 ## Why (host screenshots on BR's account, 2026-11-11, cold load)
 - **0–11 s.** BR's sessions are visible but grayed out, with venue names missing. The header says only 「確認官方連線…」, with no progress and no reason.
@@ -26,7 +26,7 @@ On the signed-in first screen, the attendee always knows what is happening and h
 2. **Grayed-out sessions explain themselves.** While the catalog is missing, cards from the plan keep their time and code and show a short 「載入場館…」 where the venue goes. Nothing else changes.
 3. **The briefing keeps its place.**
    - It gets a fixed-height area with skeleton lines while waiting, so no layout shift.
-   - The code-written facts from T11 (since-last-visit line and per-day check results) show as soon as `/api/briefing` returns them. Nova's summary fills in the same area.
+   - T11 returns the code-written facts (since-last-visit line, per-day check results) and Nova's summary in one `/api/briefing` response. Show the skeleton until that response arrives, then render both in the same area. When Nova failed (`model_unavailable`), show the facts with a one-line note. Do not add a second endpoint to get the facts earlier; after T11 and T12 the wait is one short Nova request.
    - A long briefing is collapsed to its first lines, with 「展開」, so the day's schedule stays on the first screen at 1280×800.
 4. **Explore tab.** While the catalog is loading for the first time, show a skeleton list instead of an empty area.
 5. **Measure.** With the agent browser, trace the signed-in My re:Invent page on a warm server and after 70 s idle. Report LCP, CLS and INP against the web.dev thresholds, before (main) and after.

@@ -131,7 +131,7 @@ BR asked for a best-practice fix for the remaining briefing failure and a faster
   - Today a page load after 60 s idle waits about 11 s for 11 sequential official pages.
 - **T13 · Loading UX** (`docs/briefs/T13-loading-ux.md`, class D, after T11 and T12).
   - The header shows sync progress and how old the data is.
-  - The briefing area has a fixed height with skeletons; facts show before Nova's summary.
+  - The briefing area has a fixed height with skeletons; facts and summary arrive together, and the facts still show if Nova fails.
   - Grayed-out cards explain themselves.
   - Measured against LCP ≤ 2.5 s, CLS ≤ 0.1, INP ≤ 200 ms.
 - **Order:** T11 and T12 run in parallel (no shared files), then T13.
