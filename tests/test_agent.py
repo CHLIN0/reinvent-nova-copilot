@@ -131,7 +131,8 @@ class AgentLoopTest(unittest.TestCase):
         self.assertEqual(res.rounds, 1)
         req = fake.requests[0]
         self.assertEqual(req["modelId"], "us.amazon.nova-pro-v1:0")
-        self.assertEqual(req["inferenceConfig"]["temperature"], 0.3)
+        self.assertEqual(req["inferenceConfig"]["temperature"], 0)  # greedy decoding for tool use (T9a round 2)
+        self.assertEqual(req["additionalModelRequestFields"], {"inferenceConfig": {"topK": 1}})
         self.assertEqual(req["system"][0]["text"], SYSTEM_PROMPT)
         tr = fake.requests[1]["messages"][-1]["content"][0]["toolResult"]
         self.assertEqual(tr["toolUseId"], "t1")

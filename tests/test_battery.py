@@ -307,6 +307,20 @@ class Battery(Base):
             self.assertNotIn(item, rest, prompt)
         return prompt
 
+    def test_briefing_and_the_next_chat_turn_are_forced_and_greedy(self):
+        """T9a round 2: the briefing's intermittent ModelErrorException ("invalid sequence as part of ToolUse") also
+        happened on main without T9a and without forcing; the fix is greedy decoding, and forcing stays on."""
+        mock.patch.object(web, "_my_schedule", return_value={"signed_in": False}).start()
+        self.fake = FakeBedrock([tool_use("get_profile", {}, "p"), final("Welcome."),
+                                 tool_use("get_session", {"session_id": "SYN-GEN205"}, "g"), final("SYN-GEN205 is a chalk talk.")])
+        web._state["agent"] = Agent(client=self.fake, backend=self.be)
+        web._briefing()
+        web._chat("Tell me about SYN-GEN205.", allow_write=False)
+        self.assertEqual([r["toolConfig"].get("toolChoice") for r in self.fake.requests], [{"any": {}}, None, {"any": {}}, None])
+        for r in self.fake.requests:
+            self.assertEqual(r["inferenceConfig"]["temperature"], 0)
+            self.assertEqual(r["additionalModelRequestFields"], {"inferenceConfig": {"topK": 1}})
+
     def test_briefing_asks_for_the_hotel_when_everything_is_missing(self):
         prompt = self.briefing_prompt({})
         self.assertIn("My profile does not yet say my hotel. ", prompt)

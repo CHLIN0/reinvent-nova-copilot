@@ -21,7 +21,11 @@ from atlas.tools import WRITE_TOOLS, Backend, bedrock_tool_config, dispatch
 
 DEFAULT_MODEL_ID = "us.amazon.nova-pro-v1:0"
 MAX_TOOL_ROUNDS = 6
-INFERENCE_CONFIG = {"temperature": 0.3, "topP": 0.9, "maxTokens": 2000}
+# Greedy decoding (temperature 0, topK 1), as the Amazon Nova tool-use troubleshooting guide recommends for
+# "Model produced invalid sequence as part of ToolUse": with temperature 0.3 the briefing failed so intermittently
+# (1/5 on main without T9a, 2/5 with it, every time BR signed in with T9a) and each failure ran ~15 s.
+INFERENCE_CONFIG = {"temperature": 0, "maxTokens": 2000}
+ADDITIONAL_FIELDS = {"inferenceConfig": {"topK": 1}}
 # Bedrock Converse ToolChoice: "any" = the model must request at least one tool.
 FORCE_TOOL = {"any": {}}
 
@@ -102,6 +106,7 @@ class Agent:
                 messages=messages,
                 toolConfig=_forced(cfg) if force_tool else cfg,
                 inferenceConfig=INFERENCE_CONFIG,
+                additionalModelRequestFields=ADDITIONAL_FIELDS,
             )
 
         try:
