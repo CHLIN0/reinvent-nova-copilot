@@ -449,7 +449,7 @@ def _log_failure(route: str, e: Exception, code: str) -> None:
         error = (getattr(e, "response", None) or {}).get("Error") or {}
         detail = error.get("Code")
         if detail in _LOGGED_MESSAGES and isinstance(error.get("Message"), str):
-            message = _TOKEN_LIKE.sub("[redacted]", " ".join(error["Message"].split())[:300])
+            message = _TOKEN_LIKE.sub("[redacted]", " ".join(error["Message"].split()))[:300]  # redact, then cut
     detail = f" ({detail})" if isinstance(detail, (str, int)) and str(detail).replace("_", "").isalnum() else ""
     print(f"nova-copilot {route}: {type(e).__name__}{detail} -> {code}", file=sys.stderr, flush=True)
     if message:

@@ -159,6 +159,18 @@ class ErrorRouteTests(unittest.TestCase):
             log = self.call("/api/briefing", {})[2]
         self.assertNotIn("bedrock-message", log)  # other codes: class and code only
 
+    def test_bedrock_message_token_across_the_300_character_cut_is_redacted(self):
+        """Codex review r1 (P1): truncating before redacting left the token's first characters in the log."""
+        token = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789"
+        for start in (276, 285, 292, 299):
+            text = ("ab " * 100)[:start - 1].ljust(start - 1, "a") + " " + token + " tail"  # short words: not token-like
+            err = ClientError({"Error": {"Code": "ModelErrorException", "Message": text}}, "Converse")
+            with self.subTest(start=start), mock.patch.object(web, "_briefing", side_effect=err):
+                log = self.call("/api/briefing", {})[2]
+                line = next(l for l in log.splitlines() if l.startswith("bedrock-message briefing: "))
+                self.assertNotIn(token[:5], line)
+                self.assertLessEqual(len(line), len("bedrock-message briefing: ") + 300)
+
     def test_unknown_errors_are_server_error(self):
         with mock.patch.object(web, "_chat", side_effect=RuntimeError(SECRET)):
             self.assert_failure(self.call("/api/chat", {"message": "hi"}), 500, "server_error", "RuntimeError")
